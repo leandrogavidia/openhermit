@@ -56,15 +56,15 @@ Two consequences:
 2. **Policy rows include a sandbox column**, with `NULL` meaning "any sandbox owned by this agent":
 
    ```
-   (agent_id, sandbox_id, resource_type, mode, resource_key, grants)
+   (agent_id, sandbox_alias, resource_type, mode, resource_key, grants)
    ```
 
-   - Specific `sandbox_id` — rule applies only to that sandbox.
-   - `NULL` `sandbox_id` — rule applies across all of the agent's sandboxes (typical for shared conventions like `/workspace/public/`).
+   - Specific `sandbox_alias` — rule applies only to that sandbox.
+   - `NULL` `sandbox_alias` — rule applies across all of the agent's sandboxes (typical for shared conventions like `/workspace/public/`).
 
    When evaluating, `canAccess` looks up rows for `(agent, this sandbox)` and `(agent, NULL)` and merges them, with sandbox-specific rules taking precedence on conflicts (longest-prefix-wins still applies within each set).
 
-The `sandbox_id` column is added to `agent_policies` for this purpose. For non-file resource types it's always `NULL`.
+The `sandbox_alias` column is added to `agent_policies` for this purpose. For non-file resource types it's always `NULL`.
 
 ## Backend abstraction
 
@@ -102,9 +102,9 @@ This is the interesting case. Docker has no clean "read this file" API; the opti
 
 When a docker sandbox is created, the gateway:
 
-1. Creates a host directory: `<agent_home>/sandboxes/<sandbox_id>/workspace/`.
+1. Creates a host directory: `<agent_home>/sandboxes/<sandbox_alias>/workspace/`.
 2. Bind-mounts that directory into the container at `/workspace`.
-3. Stores the mapping `(sandbox_id → host_path, container_path)` on the sandbox record.
+3. Stores the mapping `(sandbox_alias → host_path, container_path)` on the sandbox record.
 
 `FileBackend` for docker then becomes Node `fs` against the host path. The gateway never reaches into the container for file ops; it only reaches in for `exec`.
 

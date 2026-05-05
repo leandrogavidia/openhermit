@@ -67,7 +67,7 @@ Stored as `jsonb` so the array of objects round-trips naturally. There is no row
 | `agent_skills` | `grants: jsonb` | Per-assignment, not on the global `skills` registry. Default: `[{type:'any'}]`. |
 | `agent_mcp_servers` | `grants: jsonb` | Per-assignment, not on the global `mcp_servers` registry. Default: `[{type:'any'}]`. |
 | `agent_memories` | `grants: jsonb` | Controls when a memory is retrieved into context. See "Memory grants" below. |
-| `agent_policies` (new) | `(agent_id, sandbox_id, resource_type, mode, resource_key, grants: jsonb)` | Unified table for all "pure policy" resources (tools, files, future types). `mode` is `'read'` / `'write'` where meaningful, `NULL` otherwise. `sandbox_id` is set for sandbox-scoped resources (files); `NULL` means "any sandbox of this agent" or "not sandbox-scoped". |
+| `agent_policies` (new) | `(agent_id, sandbox_alias, resource_type, mode, resource_key, grants: jsonb)` | Unified table for all "pure policy" resources (tools, files, future types). `mode` is `'read'` / `'write'` where meaningful, `NULL` otherwise. `sandbox_alias` is set for sandbox-scoped resources (files); `NULL` means "any sandbox of this agent" or "not sandbox-scoped". |
 
 Sessions don't carry a configurable visibility field. The rule is fixed and lives in `canAccessSession`:
 
@@ -79,52 +79,52 @@ Sessions don't carry a configurable visibility field. The rule is fixed and live
 ### `agent_policies` example
 
 ```
-(agent='foo', sandbox=NULL,        type='tool', mode=NULL,    key='exec',
+(agent='foo', sandbox_alias=NULL,        type='tool', mode=NULL,    key='exec',
   grants=[{type:'role', value:'owner'}])
 
-(agent='foo', sandbox=NULL,        type='tool', mode=NULL,    key='schedule_create',
+(agent='foo', sandbox_alias=NULL,        type='tool', mode=NULL,    key='schedule_create',
   grants=[{type:'role', value:'owner'}, {type:'user', value:'user-abc'}])
 
-(agent='foo', sandbox=NULL,        type='exec', mode=NULL,    key='*',
+(agent='foo', sandbox_alias=NULL,        type='exec', mode=NULL,    key='*',
   grants=[{type:'role', value:'owner'}])
 
-(agent='foo', sandbox='primary',   type='exec', mode=NULL,    key='git status@/workspace/repo',
+(agent='foo', sandbox_alias='primary',   type='exec', mode=NULL,    key='git status@/workspace/repo',
   grants=[{type:'role', value:'user'}])
 
-(agent='foo', sandbox='primary',   type='exec', mode=NULL,    key='pnpm test@/workspace/repo',
+(agent='foo', sandbox_alias='primary',   type='exec', mode=NULL,    key='pnpm test@/workspace/repo',
   grants=[{type:'user', value:'user-abc'}])
 
-(agent='foo', sandbox=NULL,        type='file', mode='read',  key='/workspace/public/',
+(agent='foo', sandbox_alias=NULL,        type='file', mode='read',  key='/workspace/public/',
   grants=[{type:'any'}])
 
-(agent='foo', sandbox=NULL,        type='file', mode='write', key='/workspace/public/',
+(agent='foo', sandbox_alias=NULL,        type='file', mode='write', key='/workspace/public/',
   grants=[{type:'role', value:'owner'}, {type:'role', value:'user'}])
 
-(agent='foo', sandbox='throwaway', type='file', mode='write', key='/workspace/',
+(agent='foo', sandbox_alias='throwaway', type='file', mode='write', key='/workspace/',
   grants=[{type:'any'}])
 
-(agent='foo', sandbox=NULL,        type='file', mode='read',  key='/workspace/',
+(agent='foo', sandbox_alias=NULL,        type='file', mode='read',  key='/workspace/',
   grants=[{type:'role', value:'owner'}])
 
-(agent='foo', sandbox=NULL,        type='file', mode='write', key='/workspace/',
+(agent='foo', sandbox_alias=NULL,        type='file', mode='write', key='/workspace/',
   grants=[{type:'role', value:'owner'}])
 ```
 
 Match semantics for `resource_key` are per-type and live in `canAccess`:
 
-- `tool` — exact match. `sandbox_id` and `mode` ignored (always NULL for tool rows).
-- `file` — longest-prefix match, scoped to the requested mode and sandbox. Sandbox-specific rows override `sandbox_id IS NULL` rows for the same key.
+- `tool` — exact match. `sandbox_alias` and `mode` ignored (always NULL for tool rows).
+- `file` — longest-prefix match, scoped to the requested mode and sandbox. Sandbox-specific rows override `sandbox_alias IS NULL` rows for the same key.
 - `exec` — see "Exec command whitelist" below.
 
 If no rule matches, deny. Adding a new resource type means adding one branch in `canAccess`, no schema migration.
 
-When a new resource type is introduced (e.g. `network`, `db_query`), use `mode` if read and write differ in a way operators legitimately want to gate separately, and use `sandbox_id` if the resource is sandbox-bound. Otherwise leave them NULL.
+When a new resource type is introduced (e.g. `network`, `db_query`), use `mode` if read and write differ in a way operators legitimately want to gate separately, and use `sandbox_alias` if the resource is sandbox-bound. Otherwise leave them NULL.
 
-Index: `(agent_id, sandbox_id, resource_type, mode, resource_key)`.
+Index: `(agent_id, sandbox_alias, resource_type, mode, resource_key)`.
 
 Admin UI should expose a "read + write" shortcut that emits two rows with the same grants, since most file rules share permissions across both modes.
 
-See [fs-tools.md](./fs-tools.md) for how file paths and the `sandbox_id` column are used by the file tools layer.
+See [fs-tools.md](./fs-tools.md) for how file paths and the `sandbox_alias` column are used by the file tools layer.
 
 ### Exec command whitelist
 
@@ -178,7 +178,7 @@ policy_grant(resource: ResourceDescriptor, grant: Grant)
   policy: { kind: 'fixed', grants: [{type:'role', value:'owner'}] }
 ```
 
-- `resource` — full structured descriptor: `{type, sandbox_id, mode, key}`. Same shape as the `Resource` discriminated union used elsewhere.
+- `resource` — full structured descriptor: `{type, sandbox_alias, mode, key}`. Same shape as the `Resource` discriminated union used elsewhere.
 - `grant` — a single `Grant` (`{type:'user', value:...}`, `{type:'role', value:...}`).
 - Behaviour: upserts the corresponding row in `agent_policies`. If a row already exists for that `(agent, sandbox, type, mode, key)`, the new grant is merged into its `grants` array; otherwise a row is created.
 
@@ -210,7 +210,7 @@ User pastes that message to owner via Slack DM.
 
 Owner in their own conversation with the agent:
 > Owner: grant user-xyz read access to /workspace/notes/architecture.md on the primary sandbox
-> Agent: [policy_grant(resource={type:'file', sandbox_id:'primary', mode:'read', key:'/workspace/notes/architecture.md'}, grant={type:'user', value:'user-xyz'})] Done.
+> Agent: [policy_grant(resource={type:'file', sandbox_alias:'primary', mode:'read', key:'/workspace/notes/architecture.md'}, grant={type:'user', value:'user-xyz'})] Done.
 
 User retries the original request and it now succeeds.
 
