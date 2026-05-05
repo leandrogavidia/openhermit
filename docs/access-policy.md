@@ -1,6 +1,6 @@
-# Access Policy (Proposal)
+# Access Policy
 
-> **Status: design proposal, not yet implemented.** Open questions are called out at the end.
+> **Status: Phase 0–2.5 implemented.** Phase 3 (exec command whitelist, circles) is not yet built. Open questions are called out at the end; some have been resolved by the implementation.
 
 OpenHermit currently gates a few sensitive operations through scattered role checks (e.g. a `GUEST_BLOCKED_TOOLS` set in the agent runner, `requireOwnerOrAdmin` middleware on management routes). This document proposes a unified access-policy model so that **all** caller-visible resources are gated through one mechanism.
 
@@ -62,19 +62,22 @@ Stored as `jsonb` so the array of objects round-trips naturally. There is no row
 
 ## Resource declaration
 
-| Table | New field(s) | Notes |
-|-------|--------------|-------|
-| `agent_skills` | `grants: jsonb` | Per-assignment, not on the global `skills` registry. Default: `[{type:'any'}]`. |
-| `agent_mcp_servers` | `grants: jsonb` | Per-assignment, not on the global `mcp_servers` registry. Default: `[{type:'any'}]`. |
-| `agent_memories` | `grants: jsonb` | Controls when a memory is retrieved into context. See "Memory grants" below. |
-| `agent_policies` (new) | `(agent_id, sandbox_alias, resource_type, mode, resource_key, grants: jsonb)` | Unified table for all "pure policy" resources (tools, files, future types). `mode` is `'read'` / `'write'` where meaningful, `NULL` otherwise. `sandbox_alias` is set for sandbox-scoped resources (files); `NULL` means "any sandbox of this agent" or "not sandbox-scoped". |
+| Table | Field(s) | Notes |
+|-------|----------|-------|
+| `memories` | `grants: jsonb` | Per-memory visibility during retrieval. Default `[]` = open. See "Memory grants" below. |
+| `agent_policies` | `(agent_id, sandbox_alias, resource_type, mode, resource_key, grants: jsonb)` | Unified table for all policy resources (tools, files, exec, future types). `mode` is `'read'` / `'write'` where meaningful, `NULL` otherwise. `sandbox_alias` is set for sandbox-scoped resources (files); `NULL` means "any sandbox of this agent" or "not sandbox-scoped". Supports `*` suffix for prefix matching on `resource_key` (e.g. `mcp__weather__*` covers all tools from that MCP server). |
+
+**Not in the policy table:**
+
+- **Skills** — managed via filesystem (install/remove skill files). Not gated through policy.
+- **MCP servers** — individual MCP *tools* are gated through `agent_policies` with `resource_type='tool'` and prefix matching (`mcp__<serverId>__*`). No `grants` column on `agent_mcp_servers`.
 
 Sessions don't carry a configurable visibility field. The rule is fixed and lives in `canAccessSession`:
 
 - `owner` — sees all sessions on the agent.
 - everyone else — sees sessions they participated in (resolved through `merge_target` so merged users see history from both pre-merge identities).
 
-`agent_skills` and `agent_mcp_servers` keep grants on the assignment row because they already exist as assignment tables (carrying `enabled`, ordering, etc.) — policy rides along on the assignment.
+`agent_skills` and `agent_mcp_servers` do **not** carry their own grants columns. Skills are managed via the filesystem (owners install/remove skill files). MCP tools are gated via `agent_policies` rows with `resource_type='tool'` and prefix matching on the `mcp__<serverId>__` prefix — one wildcard row covers all tools from a server.
 
 ### `agent_policies` example
 
@@ -112,7 +115,7 @@ Sessions don't carry a configurable visibility field. The rule is fixed and live
 
 Match semantics for `resource_key` are per-type and live in `canAccess`:
 
-- `tool` — exact match. `sandbox_alias` and `mode` ignored (always NULL for tool rows).
+- `tool` — exact match first, then prefix match (`resource_key` ending with `*`). Exact takes priority. `sandbox_alias` and `mode` ignored (always NULL for tool rows).
 - `file` — longest-prefix match, scoped to the requested mode and sandbox. Sandbox-specific rows override `sandbox_alias IS NULL` rows for the same key.
 - `exec` — see "Exec command whitelist" below.
 
@@ -167,34 +170,30 @@ Owners typically have one `key='*'` row granting them everything; non-owner role
 
 This solves the practical case of "let user run a few specific commands" without opening shell to them. For parameterised commands (e.g. let user run any `npm` subcommand), a custom tool wrapping that command is still the better fit — see fs-tools.md "exec coexistence".
 
-### Requesting access (`policy_grant`)
+### Policy management tools (implemented)
 
-When a tool call is denied because the calling principal lacks a grant, the agent shouldn't dead-end. Owners can grant access on demand via a built-in tool, driven by user requests forwarded out-of-band.
-
-The flow is stateless — there is no DB table of pending requests. The agent's denial message embeds a complete, human-readable resource descriptor; the user forwards that text to the owner; the owner asks the agent to grant; the agent calls `policy_grant`.
+Three owner-only fixed-rule tools manage the `agent_policies` table:
 
 ```
-policy_grant(resource: ResourceDescriptor, grant: Grant)
+policy_list(resourceType?: string)
+  policy: { kind: 'fixed', grants: [{type:'role', value:'owner'}] }
+
+policy_set(resourceKey, grants, resourceType?, sandboxAlias?, mode?)
+  policy: { kind: 'fixed', grants: [{type:'role', value:'owner'}] }
+
+policy_delete(resourceKey, resourceType?, sandboxAlias?, mode?)
   policy: { kind: 'fixed', grants: [{type:'role', value:'owner'}] }
 ```
 
-- `resource` — full structured descriptor: `{type, sandbox_alias, mode, key}`. Same shape as the `Resource` discriminated union used elsewhere.
-- `grant` — a single `Grant` (`{type:'user', value:...}`, `{type:'role', value:...}`).
-- Behaviour: upserts the corresponding row in `agent_policies`. If a row already exists for that `(agent, sandbox, type, mode, key)`, the new grant is merged into its `grants` array; otherwise a row is created.
+`policy_set` upserts a row — if a row already exists for the same `(agent, sandbox, type, mode, key)`, its grants are replaced.
 
-Symmetric: `policy_revoke(resource, grant)` removes a grant.
+These are also exposed via:
+- **API**: `GET/POST/DELETE /api/agents/:agentId/policies`
+- **SDK**: `listPolicies()`, `upsertPolicy()`, `deletePolicy()`
+- **CLI**: `hermit config policy list/set/delete`
+- **Web admin UI**: "Policies" tab with presets (Everyone, Owner only, Owner+User, Custom JSON)
 
-Companion read-side tool:
-
-```
-policy_list(principal?: Principal)
-  policy: { kind: 'fixed', grants: [{type:'any'}] }
-```
-
-- Omitted `principal`, or `principal` equal to the caller — returns the caller's own effective permissions across all resource types (skills, MCP, files, exec, tools, memory summary).
-- `principal` referring to a different user — requires caller to be `owner`; otherwise denied inside the handler.
-
-Same pattern as `session_list`: anyone can introspect themselves; only owner can introspect others. Output groups by resource type so users can ask "what can I do here" and get a useful answer without leaking owner-only resources they couldn't use anyway.
+When a tool call is denied because the calling principal lacks a grant, the agent can suggest the user ask the owner to run `policy_set` to grant access.
 
 #### Example flow
 
@@ -254,34 +253,29 @@ content="last prod deploy failed because of env var X"
   // only surfaced when owner is debugging
 ```
 
-Agents don't construct grants by hand. The `memory_save` tool exposes a high-level audience parameter (e.g. `audience: 'private' | 'shared' | 'owner-only'`) that the runtime translates into grants based on the writing principal. The schema only stores `grants`; everything else is sugar at the tool layer.
+The `memory_add` tool accepts an optional `grants` parameter so the agent can set visibility at creation time. Default is `[]` (open to everyone), matching backward-compatible behavior.
 
-Default at write time is the most conservative grant for the calling principal — typically `[{type:'user', value: principal.userId}]` — so unmarked memories never leak. Agents override via `audience` only when they consciously decide a memory is broader (e.g. a universal fact about the environment).
+### Editing memory grants conversationally (implemented)
 
-### Editing memory grants conversationally
-
-Memories accumulate continuously during conversations. Curating them only through an admin UI doesn't scale — the volume always outruns manual list-management. So owners get a built-in tool to update grants in dialogue:
+Owners get a built-in tool to update grants on existing memories:
 
 ```
-memory_update_grants(ids: string[], audience: ... | grants: Grant[])
+memory_set_grants(key: string, grants: Grant[])
+  policy: { kind: 'fixed', grants: [{type:'role', value:'owner'}] }
 ```
 
 Typical flow:
 
 ```
-Owner: lock all my side-project memories down to just me
+Owner: lock the deploy credentials memory to owner-only
 
-Agent: [memory_recall("side project")] → 7 candidates, listed inline.
-       Update all 7 to owner-only?
-
-Owner: yes
-
-Agent: [memory_update_grants(ids=[...], audience='owner-only')] done.
+Agent: [memory_set_grants(key="project/deploy-creds",
+         grants=[{type:"role", value:"owner"}])] done.
 ```
 
-This tool is **fixed-rule, owner-only** (`policy: { kind:'fixed', grants:[{type:'role', value:'owner'}] }`). Editing memory ACLs is itself an ACL-sensitive operation; configurability would just create a reconfiguration footgun.
+This tool is **fixed-rule, owner-only**. Editing memory ACLs is itself an ACL-sensitive operation; configurability would just create a reconfiguration footgun.
 
-The same conversational-management pattern is **not** extended to skills, MCP servers, or file policies. Those resources are deliberately installed by an owner — a low-frequency, planned act — and the admin UI is the right place. Memory is special because it is produced continuously and unplanned by the agent itself.
+Read-side filtering is implemented in all memory read tools (`memory_get`, `memory_list`, `memory_recall`): each builds a `Principal` from the current user context and filters results through `canAccess`. Entries whose grants don't match the principal are silently excluded (or return "not found" for exact-key lookups).
 
 ## Grants are necessary, not sufficient
 
@@ -308,12 +302,18 @@ Not every tool's policy belongs in `agent_policies`. Some tools have a security 
 **Fixed-rule tools.** Grants are baked into the tool definition. `agent_policies` is not consulted for these tools, and the admin UI doesn't expose them as editable. Examples:
 
 - `identity_link_request` / `identity_link_confirm` — always `[{type:'any'}]`; safety comes from the token + channel-proof flow inside the handler.
-- `memory_save`, `memory_recall` — the agent must always be able to remember and recall, otherwise it loses basic faculties.
-- `memory_update_grants` — owner-only by design; see Memory grants section.
-- `policy_grant`, `policy_revoke` — owner-only; see Requesting access.
-- `policy_list` — open to all, but internal handler restricts cross-principal queries to owner; see Requesting access.
+- `memory_get`, `memory_list`, `memory_recall` — always `[{type:'any'}]` at the tool level; per-memory grants filter individual entries at read time.
+- `memory_set_grants` — owner-only by design; see Memory grants section.
+- `mcp_enable`, `mcp_disable` — owner-only; structural changes to the agent's tool surface.
+- `working_memory_update`, `session_description_update` — grants `[]` (system-only); these run under introspection on behalf of the system, never user-invoked.
+- `policy_list`, `policy_set`, `policy_delete` — owner-only; see Policy management tools.
 
-**Configurable tools.** A default grant is declared in the tool definition; `agent_policies` rows on a given agent override it. Admin UI exposes them. Examples: `exec`, `schedule_*`, `mcp_enable`, `mcp_disable`, file operations, custom user-authored tools.
+**Configurable tools.** A default grant is declared in the tool definition; `agent_policies` rows on a given agent override it. Admin UI exposes them. Examples:
+
+- `file_read`, `file_list`, `file_stat` — default: owner + user (guests blocked).
+- `file_write`, `file_edit`, `file_delete` — default: owner only.
+- `memory_add`, `memory_update`, `memory_delete` — default: owner + user.
+- `exec`, `schedule_*` — configurable per agent.
 
 Tool declaration carries the kind:
 
@@ -396,13 +396,13 @@ Slated for after the per-user grant mechanism is in production and shows real de
 
 ## Phased rollout
 
-- **P0 — close existing gaps.** Stand up `agent_policies` and the central `canAccess`; migrate `GUEST_BLOCKED_TOOLS` into `tool` rows. Pure refactor; no new user-visible features.
-- **P1 — product surface.** `grants` on `agent_skills` and `agent_mcp_servers`; session list filtered by participation; admin UI for all of the above.
-- **P2 — deeper isolation.** `grants` on `agent_memories` (with audience sugar in `memory_save`); `file` rows in `agent_policies`. Touches memory tool and fs tool contracts.
-- **P3 — out of scope here.** Quota and rate limiting as a separate subsystem.
+- **Phase 1 — central policy foundation.** ✅ `agent_policies` table, central `canAccess` + `resolveToolGrants`, removed `GUEST_BLOCKED_TOOLS` and `DEFAULT_TOOL_GRANTS`. Every built-in tool declares its own `ToolPolicy` (fixed or configurable). Decoupled tool creation from role gating.
+- **Phase 2 — admin surface.** ✅ `policy_list/set/delete` owner tools, API endpoints, SDK, CLI, web admin UI with Policies tab.
+- **Phase 2.5 — per-memory grants.** ✅ `grants` column on `memories` table, memory read tools filter by principal, `memory_add` accepts grants, `memory_set_grants` owner tool.
+- **Phase 3 — exec command whitelist + circles.** 🔲 Not yet implemented. See sections above for design.
 
 ## Open questions
 
-1. **Memory default grants** — when an agent saves a memory without specifying audience, default to `[{type:'any'}]` (backward compatible) or to a per-conversation default like `[{type:'user', value: principal.userId}]` (safer)?
+1. ~~**Memory default grants** — when an agent saves a memory without specifying audience, default to `[{type:'any'}]` (backward compatible) or to a per-conversation default like `[{type:'user', value: principal.userId}]` (safer)?~~ **Resolved:** default is `[]` (open to everyone), backward compatible. Agent can pass explicit grants via `memory_add`.
 2. **File policy defaults on new agents** — ship a template (public/shared/owner tiers) or default empty so only owner can use fs until configured?
-3. **Is P0 worth its own milestone?** The black-list works today. Folding the refactor into P1 ships value alongside cleanup.
+3. ~~**Is P0 worth its own milestone?**~~ **Resolved:** Phase 1 combined the refactor with the policy foundation.
