@@ -515,6 +515,37 @@ export class GatewayClient {
     return this.getJson(`/api/agents/${encodeURIComponent(agentId)}/schedules/${encodeURIComponent(scheduleId)}/runs${params}`);
   }
 
+  // --- policies ---
+
+  async listPolicies(agentId: string, resourceType?: string): Promise<unknown[]> {
+    const params = resourceType ? `?resourceType=${encodeURIComponent(resourceType)}` : '';
+    return this.getJson(`/api/agents/${encodeURIComponent(agentId)}/policies${params}`);
+  }
+
+  async upsertPolicy(agentId: string, input: {
+    resourceType: string;
+    resourceKey: string;
+    grants: unknown[];
+    sandboxAlias?: string | null;
+    mode?: string | null;
+  }): Promise<unknown> {
+    return this.postJson(`/api/agents/${encodeURIComponent(agentId)}/policies`, input);
+  }
+
+  async deletePolicy(
+    agentId: string,
+    resourceType: string,
+    resourceKey: string,
+    opts?: { sandboxAlias?: string; mode?: string },
+  ): Promise<void> {
+    let p = `/api/agents/${encodeURIComponent(agentId)}/policies/${encodeURIComponent(resourceType)}/${encodeURIComponent(resourceKey)}`;
+    const params = new URLSearchParams();
+    if (opts?.sandboxAlias) params.set('sandboxAlias', opts.sandboxAlias);
+    if (opts?.mode) params.set('mode', opts.mode);
+    if (params.size > 0) p += `?${params.toString()}`;
+    await this.deleteJson(p);
+  }
+
   agent(agentId: string): AgentLocalClient {
     return new AgentLocalClient({
       baseUrl: joinUrl(this.baseUrl, `/api/agents/${encodeURIComponent(agentId)}`),

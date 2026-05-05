@@ -315,6 +315,7 @@ export const main = async (): Promise<void> => {
     ...(agentChannelStore ? { agentChannelStore } : {}),
     ...(instructionStore ? { instructionStore } : {}),
     ...(sandboxStore ? { sandboxStore } : {}),
+    ...(policyStore ? { policyStore } : {}),
     sandboxPresets: config.sandboxPresets,
     autoProvisionSandbox: config.autoProvisionSandbox,
     channelRegistry: channels,

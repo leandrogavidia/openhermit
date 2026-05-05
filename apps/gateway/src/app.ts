@@ -22,6 +22,7 @@ import type {
   DbAgentStore,
   DbAgentConfigStore,
   DbMcpServerStore,
+  DbPolicyStore,
   DbScheduleStore,
   DbSkillStore,
   DbUserStore,
@@ -207,6 +208,7 @@ export interface GatewayAppOptions {
   agentChannelStore?: DbAgentChannelStore | undefined;
   instructionStore?: import('@openhermit/store').DbInstructionStore | undefined;
   sandboxStore?: SandboxStore | undefined;
+  policyStore?: DbPolicyStore | undefined;
   /** Named sandbox presets, keyed by preset name. */
   sandboxPresets?: Record<string, SandboxPreset> | undefined;
   /** Default preset to use when an agent is created without an explicit `sandbox` field. Null disables auto-provisioning. */
@@ -2242,6 +2244,67 @@ export const createGatewayApp = (options: GatewayAppOptions): Hono => {
     const limit = Number(c.req.query('limit')) || 20;
     const runs = await store.listRuns({ agentId }, scheduleId, limit);
     return c.json(runs);
+  });
+
+  // --- per-agent policy management ---
+
+  const requirePolicyStore = (): DbPolicyStore => {
+    if (!options.policyStore) {
+      throw new OpenHermitError('Policy store is not configured.', 'not_configured', 500);
+    }
+    return options.policyStore;
+  };
+
+  app.get('/api/agents/:agentId/policies', async (c) => {
+    const agentId = c.req.param('agentId') ?? '';
+    await requireOwnerOrAdmin(c, agentId);
+    const store = requirePolicyStore();
+    const resourceType = c.req.query('resourceType') ?? undefined;
+    const policies = await store.list(agentId, resourceType);
+    return c.json(policies);
+  });
+
+  app.post('/api/agents/:agentId/policies', async (c) => {
+    const agentId = c.req.param('agentId') ?? '';
+    await requireOwnerOrAdmin(c, agentId);
+    const store = requirePolicyStore();
+    const body = await c.req.json() as Record<string, unknown>;
+    if (!body.resourceType || typeof body.resourceType !== 'string') {
+      throw new ValidationError('resourceType is required');
+    }
+    if (!body.resourceKey || typeof body.resourceKey !== 'string') {
+      throw new ValidationError('resourceKey is required');
+    }
+    if (!Array.isArray(body.grants)) {
+      throw new ValidationError('grants must be an array');
+    }
+    const record = await store.upsert({
+      agentId,
+      resourceType: body.resourceType,
+      resourceKey: body.resourceKey,
+      grants: body.grants,
+      sandboxAlias: typeof body.sandboxAlias === 'string' ? body.sandboxAlias : null,
+      mode: typeof body.mode === 'string' ? body.mode : null,
+    });
+    return c.json(record, 201);
+  });
+
+  app.delete('/api/agents/:agentId/policies/:resourceType/:resourceKey', async (c) => {
+    const agentId = c.req.param('agentId') ?? '';
+    const resourceType = c.req.param('resourceType') ?? '';
+    const resourceKey = c.req.param('resourceKey') ?? '';
+    await requireOwnerOrAdmin(c, agentId);
+    const store = requirePolicyStore();
+    const sandboxAlias = c.req.query('sandboxAlias');
+    const mode = c.req.query('mode');
+    const opts = {
+      ...(sandboxAlias ? { sandboxAlias } : {}),
+      ...(mode ? { mode } : {}),
+    };
+    const existing = await store.get(agentId, resourceType, resourceKey, opts);
+    if (!existing) throw new NotFoundError(`Policy not found: ${resourceType}/${resourceKey}`);
+    await store.delete(agentId, resourceType, resourceKey, opts);
+    return c.json({ ok: true });
   });
 
   // --- admin: MCP servers management ---

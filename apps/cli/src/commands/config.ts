@@ -186,6 +186,91 @@ export const registerConfigCommand = (program: Command): void => {
       }
     });
 
+  // ── policy ────────────────────────────────────────────────────────
+
+  const policy = cfg
+    .command('policy')
+    .description('Manage tool access policies (inherits --agent from `config`)');
+
+  policy
+    .command('list')
+    .description('List all policies')
+    .option('--resource-type <type>', 'Filter by resource type (e.g. "tool")')
+    .action(async function (this: Command) {
+      const agentId = resolveAgentId(this);
+      try {
+        const gateway = createGateway();
+        const policies = await gateway.listPolicies(agentId, this.opts().resourceType) as Array<Record<string, unknown>>;
+        if (policies.length === 0) {
+          console.log('No policies configured.');
+          return;
+        }
+        for (const p of policies) {
+          const scope = [
+            p.sandboxAlias ? `sandbox=${p.sandboxAlias}` : null,
+            p.mode ? `mode=${p.mode}` : null,
+          ].filter(Boolean).join(' ');
+          console.log(`  ${p.resourceType}/${p.resourceKey}${scope ? ` (${scope})` : ''}`);
+          console.log(`    grants: ${JSON.stringify(p.grants)}`);
+        }
+      } catch (error) {
+        handleError(error);
+      }
+    });
+
+  policy
+    .command('set <resource-key> <grants-json>')
+    .description('Set a tool policy (e.g. hermit config policy set exec \'[{"type":"any"}]\')')
+    .option('--resource-type <type>', 'Resource type', 'tool')
+    .option('--sandbox-alias <alias>', 'Sandbox alias')
+    .option('--mode <mode>', 'Mode')
+    .action(async function (this: Command, resourceKey: string, grantsJson: string) {
+      const agentId = resolveAgentId(this);
+      const opts = this.opts() as { resourceType: string; sandboxAlias?: string; mode?: string };
+      try {
+        let grants: unknown[];
+        try {
+          grants = JSON.parse(grantsJson);
+          if (!Array.isArray(grants)) throw new Error();
+        } catch {
+          console.error('grants must be a valid JSON array, e.g. \'[{"type":"any"}]\'');
+          process.exit(1);
+        }
+        const gateway = createGateway();
+        await gateway.upsertPolicy(agentId, {
+          resourceType: opts.resourceType,
+          resourceKey,
+          grants,
+          ...(opts.sandboxAlias ? { sandboxAlias: opts.sandboxAlias } : {}),
+          ...(opts.mode ? { mode: opts.mode } : {}),
+        });
+        console.log(`Policy set: ${opts.resourceType}/${resourceKey} → ${grantsJson}`);
+      } catch (error) {
+        handleError(error);
+      }
+    });
+
+  policy
+    .command('delete <resource-key>')
+    .description('Delete a tool policy')
+    .option('--resource-type <type>', 'Resource type', 'tool')
+    .option('--sandbox-alias <alias>', 'Sandbox alias')
+    .option('--mode <mode>', 'Mode')
+    .action(async function (this: Command, resourceKey: string) {
+      const agentId = resolveAgentId(this);
+      const opts = this.opts() as { resourceType: string; sandboxAlias?: string; mode?: string };
+      try {
+        const gateway = createGateway();
+        await gateway.deletePolicy(agentId, opts.resourceType, resourceKey, {
+          ...(opts.sandboxAlias ? { sandboxAlias: opts.sandboxAlias } : {}),
+          ...(opts.mode ? { mode: opts.mode } : {}),
+        });
+        console.log(`Policy deleted: ${opts.resourceType}/${resourceKey}`);
+      } catch (error) {
+        handleError(error);
+      }
+    });
+
   // ── security ──────────────────────────────────────────────────────
   // Read / overwrite the agent's security policy: autonomy_level,
   // require_approval_for, access ('public' | 'protected' | 'private'),
