@@ -21,6 +21,7 @@ interface AgentMcpAssignment {
 
 export function McpServersPanel() {
   const [servers, setServers] = useState<McpServerInfo[]>([]);
+  const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [showCreate, setShowCreate] = useState(false);
   const [editServer, setEditServer] = useState<McpServerInfo | null>(null);
@@ -32,6 +33,8 @@ export function McpServersPanel() {
       setError('');
     } catch (err) {
       setError((err as Error).message);
+    } finally {
+      setLoading(false);
     }
   }, []);
 
@@ -56,9 +59,13 @@ export function McpServersPanel() {
         </button>
       </div>
 
-      {error && <p className="agent-list__empty">{error}</p>}
+      {loading && servers.length === 0 && (
+        <p className="agent-list__empty">Loading MCP servers…</p>
+      )}
 
-      {!error && servers.length === 0 && (
+      {!loading && error && <p className="agent-list__empty">{error}</p>}
+
+      {!loading && !error && servers.length === 0 && (
         <p className="agent-list__empty">No MCP servers registered. Add one to get started.</p>
       )}
 

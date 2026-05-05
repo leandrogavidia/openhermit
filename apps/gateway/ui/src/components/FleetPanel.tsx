@@ -51,6 +51,7 @@ const formatRelative = (iso?: string): string => {
 
 export function FleetPanel() {
   const [fleet, setFleet] = useState<FleetAgent[]>([]);
+  const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [bulkOpen, setBulkOpen] = useState(false);
@@ -70,6 +71,8 @@ export function FleetPanel() {
       setError('');
     } catch (err) {
       setError((err as Error).message);
+    } finally {
+      setLoading(false);
     }
   }, []);
 
@@ -171,9 +174,13 @@ export function FleetPanel() {
         </div>
       </div>
 
-      {error && <p className="agent-list__empty">{error}</p>}
+      {loading && fleet.length === 0 && (
+        <p className="agent-list__empty">Loading agents…</p>
+      )}
 
-      {!error && fleet.length === 0 && (
+      {!loading && error && <p className="agent-list__empty">{error}</p>}
+
+      {!loading && !error && fleet.length === 0 && (
         <p className="agent-list__empty">No agents yet. Create one to get started.</p>
       )}
 

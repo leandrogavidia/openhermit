@@ -20,6 +20,7 @@ interface AgentSkillAssignment {
 
 export function SkillsPanel() {
   const [skills, setSkills] = useState<SkillInfo[]>([]);
+  const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [showCreate, setShowCreate] = useState(false);
   const [editSkill, setEditSkill] = useState<SkillInfo | null>(null);
@@ -31,6 +32,8 @@ export function SkillsPanel() {
       setError('');
     } catch (err) {
       setError((err as Error).message);
+    } finally {
+      setLoading(false);
     }
   }, []);
 
@@ -55,9 +58,13 @@ export function SkillsPanel() {
         </button>
       </div>
 
-      {error && <p className="agent-list__empty">{error}</p>}
+      {loading && skills.length === 0 && (
+        <p className="agent-list__empty">Loading skills…</p>
+      )}
 
-      {!error && skills.length === 0 && (
+      {!loading && error && <p className="agent-list__empty">{error}</p>}
+
+      {!loading && !error && skills.length === 0 && (
         <p className="agent-list__empty">No skills registered. Register one to get started.</p>
       )}
 

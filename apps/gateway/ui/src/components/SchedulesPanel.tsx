@@ -43,6 +43,7 @@ export function SchedulesPanel() {
   const [agents, setAgents] = useState<AgentInfo[]>([]);
   const [agentId, setAgentId] = useState('');
   const [schedules, setSchedules] = useState<ScheduleRecord[]>([]);
+  const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [showCreate, setShowCreate] = useState(false);
   const [runsSchedule, setRunsSchedule] = useState<ScheduleRecord | null>(null);
@@ -59,11 +60,14 @@ export function SchedulesPanel() {
 
   const loadSchedules = useCallback(async () => {
     if (!agentId) return;
+    setLoading(true);
     try {
       setSchedules(await api<ScheduleRecord[]>(`/api/agents/${encodeURIComponent(agentId)}/schedules`));
       setError('');
     } catch (err) {
       setError((err as Error).message);
+    } finally {
+      setLoading(false);
     }
   }, [agentId]);
 
@@ -129,9 +133,13 @@ export function SchedulesPanel() {
         </select>
       </label>
 
-      {error && <p className="agent-list__empty">{error}</p>}
+      {loading && schedules.length === 0 && agentId && (
+        <p className="agent-list__empty">Loading schedules…</p>
+      )}
 
-      {!error && schedules.length === 0 && agentId && (
+      {!loading && error && <p className="agent-list__empty">{error}</p>}
+
+      {!loading && !error && schedules.length === 0 && agentId && (
         <p className="agent-list__empty">No schedules for this agent.</p>
       )}
 

@@ -41,6 +41,7 @@ export function ChannelsPanel() {
   const [agents, setAgents] = useState<AgentInfo[]>([]);
   const [agentId, setAgentId] = useState('');
   const [channels, setChannels] = useState<ChannelRecord[]>([]);
+  const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [editing, setEditing] = useState<ChannelRecord | null>(null);
   const [creating, setCreating] = useState(false);
@@ -58,11 +59,14 @@ export function ChannelsPanel() {
 
   const loadChannels = useCallback(async () => {
     if (!agentId) return;
+    setLoading(true);
     try {
       setChannels(await api<ChannelRecord[]>(`/api/agents/${encodeURIComponent(agentId)}/channels`));
       setError('');
     } catch (err) {
       setError((err as Error).message);
+    } finally {
+      setLoading(false);
     }
   }, [agentId]);
 
@@ -168,7 +172,10 @@ export function ChannelsPanel() {
       )}
 
       <h3 style={{ marginTop: 16, marginBottom: 8, fontSize: '0.9rem', color: 'var(--muted)' }}>Built-in</h3>
-      {builtin.length === 0 && agentId && (
+      {loading && channels.length === 0 && agentId && (
+        <p className="agent-list__empty">Loading channels…</p>
+      )}
+      {!loading && builtin.length === 0 && agentId && (
         <p className="agent-list__empty">No built-in channels yet for this agent.</p>
       )}
       <div className="schedule-list">
@@ -188,7 +195,7 @@ export function ChannelsPanel() {
       <h3 style={{ marginTop: 24, marginBottom: 8, fontSize: '0.9rem', color: 'var(--muted)' }}>
         External tokens
       </h3>
-      {external.length === 0 && agentId && (
+      {!loading && external.length === 0 && agentId && (
         <p className="agent-list__empty">No external tokens issued.</p>
       )}
       <div className="schedule-list">
