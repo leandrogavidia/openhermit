@@ -489,8 +489,13 @@ export class AgentRunner implements SessionRuntime {
     // before opening a session; channel adapters still auto-create their
     // per-channel guest users via resolveSessionUser when sender info is in
     // the spec metadata.
-    const { userId: resolvedUserId, role: resolvedUserRole, userName: resolvedUserName } =
-      await this.resolveSessionUser(effectiveSpec, now, caller);
+    const {
+      userId: resolvedUserId,
+      role: resolvedUserRole,
+      userName: resolvedUserName,
+      channel: resolvedChannel,
+      channelUserId: resolvedChannelUserId,
+    } = await this.resolveSessionUser(effectiveSpec, now, caller);
 
     // Access control on reopen: non-owner users must already be participants
     if (persisted && resolvedUserId && !persisted.userIds?.includes(resolvedUserId) && resolvedUserRole !== 'owner') {
@@ -537,6 +542,8 @@ export class AgentRunner implements SessionRuntime {
       resolvedUserRole,
       resolvedUserId,
       resolvedUserName,
+      resolvedChannel,
+      resolvedChannelUserId,
     );
     session = {
       spec: effectiveSpec,
@@ -1160,7 +1167,7 @@ export class AgentRunner implements SessionRuntime {
     spec: SessionSpec,
     now: string,
     caller?: Caller,
-  ): Promise<{ userId?: string; role?: UserRole; userName?: string }> {
+  ): Promise<{ userId?: string; role?: UserRole; userName?: string; channel?: string; channelUserId?: string }> {
     // Schedule sessions carry the creator's userId directly
     const scheduleUserId = spec.metadata?.schedule_user_id;
     if (spec.source.kind === 'schedule' && scheduleUserId) {
@@ -1177,6 +1184,7 @@ export class AgentRunner implements SessionRuntime {
     const channel = caller?.channel ?? spec.source.platform ?? spec.source.kind;
     const channelUserId = caller?.channelUserId ?? this.deriveChannelUserId(spec);
     if (!channelUserId) return {};
+    const callerInfo = { channel, channelUserId };
 
     // Try to resolve existing identity
     const existingUserId = await this.store.users.resolve(channel, channelUserId);
@@ -1199,9 +1207,9 @@ export class AgentRunner implements SessionRuntime {
           // Public agent: auto-claim guest membership for the existing user
           // (no new user row, just a role on this agent).
           await this.store.users.assignAgent(this.scope, existingUserId, 'guest', now);
-          return { userId: user.userId, role: 'guest', ...(user.name ? { userName: user.name } : {}) };
+          return { userId: user.userId, role: 'guest', ...(user.name ? { userName: user.name } : {}), ...callerInfo };
         }
-        return { userId: user.userId, role: explicitRole, ...(user.name ? { userName: user.name } : {}) };
+        return { userId: user.userId, role: explicitRole, ...(user.name ? { userName: user.name } : {}), ...callerInfo };
       }
     }
 
@@ -1252,7 +1260,7 @@ export class AgentRunner implements SessionRuntime {
     });
 
     this.logRuntime(`auto-created guest user ${guestId} for ${channel}:${channelUserId}`);
-    return { userId: guestId, role: 'guest' as const, ...(name ? { userName: name } : {}) };
+    return { userId: guestId, role: 'guest' as const, ...(name ? { userName: name } : {}), ...callerInfo };
   }
 
   /**
@@ -1417,6 +1425,8 @@ export class AgentRunner implements SessionRuntime {
     userRole?: UserRole,
     userId?: string,
     userName?: string,
+    channel?: string,
+    channelUserId?: string,
   ): Promise<Agent> {
     return this.createConfiguredAgent({
       config,
@@ -1429,6 +1439,8 @@ export class AgentRunner implements SessionRuntime {
       ...(userRole ? { userRole } : {}),
       ...(userId ? { userId } : {}),
       ...(userName ? { userName } : {}),
+      ...(channel ? { channel } : {}),
+      ...(channelUserId ? { channelUserId } : {}),
       ...(spec.source.type ? { sessionType: spec.source.type } : {}),
       sourceKind: spec.source.kind,
     });
@@ -1447,6 +1459,8 @@ export class AgentRunner implements SessionRuntime {
     userRole?: UserRole;
     userId?: string;
     userName?: string;
+    channel?: string;
+    channelUserId?: string;
     sessionType?: import('@openhermit/protocol').SessionType;
     sourceKind?: string;
   }): Promise<Agent> {
@@ -1489,10 +1503,12 @@ export class AgentRunner implements SessionRuntime {
         sessionId: input.contextSessionId,
         webProvider,
         ...(isOwnerOrUnresolved ? { instructionStore: this.store.instructions } : {}),
-        ...(isOwnerOrUnresolved ? { userStore: this.store.users } : {}),
+        ...(input.userId ? { userStore: this.store.users } : {}),
         ...(isOwnerOrUnresolved || input.userId ? { sessionStore: this.store.sessions } : {}),
         ...(input.userId ? { currentUserId: input.userId } : {}),
         ...(input.userRole ? { currentUserRole: input.userRole } : {}),
+        ...(input.channel ? { currentChannel: input.channel } : {}),
+        ...(input.channelUserId ? { currentChannelUserId: input.channelUserId } : {}),
         storeScope: this.scope,
         ...(!isGuestRole ? {
           agentId: this.scope.agentId,

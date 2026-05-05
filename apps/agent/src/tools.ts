@@ -12,7 +12,7 @@ import type {
 import { createInstructionToolset } from './tools/instruction.js';
 import { createWebToolset } from './tools/web.js';
 import { createSessionToolset } from './tools/session.js';
-import { createUserToolset } from './tools/user.js';
+import { createIdentityToolset, createUserToolset } from './tools/user.js';
 import { createExecToolset } from './tools/sandbox-exec.js';
 import { createScheduleToolset } from './tools/schedule.js';
 
@@ -53,8 +53,11 @@ export const createBuiltInToolsets = (
   if (context.agentId) {
     toolsets.push(createExecToolset(context));
   }
-  if (context.userStore) {
+  if (context.userStore && context.currentUserRole === 'owner') {
     toolsets.push(createUserToolset(context));
+  }
+  if (context.userStore && context.currentUserId && context.currentChannel && context.currentChannelUserId) {
+    toolsets.push(createIdentityToolset(context));
   }
   if (context.sessionStore) {
     toolsets.push(createSessionToolset(context));

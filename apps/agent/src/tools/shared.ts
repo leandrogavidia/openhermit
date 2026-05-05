@@ -25,6 +25,8 @@ const READONLY_BLOCKED_TOOLS = new Set([
   'user_identity_unlink',
   'user_role_set',
   'user_merge',
+  'identity_link_request',
+  'identity_link_confirm',
   'schedule_create',
   'schedule_update',
   'schedule_delete',
@@ -56,6 +58,11 @@ export interface ToolContext {
    * that surface cross-user information (e.g. session_list) widen their
    * visibility when role === 'owner'. */
   currentUserRole?: 'owner' | 'user' | 'guest' | undefined;
+  /** Channel of the current caller (e.g. 'telegram', 'cli', 'web'). Used by
+   * identity-link tools to know which channel a confirmation is coming from. */
+  currentChannel?: string | undefined;
+  /** Platform-specific user id of the current caller on `currentChannel`. */
+  currentChannelUserId?: string | undefined;
   webProvider?: WebProvider | undefined;
   instructionStore?: InstructionStore;
   userStore?: UserStore;
