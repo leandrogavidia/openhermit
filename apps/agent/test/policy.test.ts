@@ -4,7 +4,6 @@ import { test } from 'node:test';
 import {
   buildPrincipal,
   canAccess,
-  DEFAULT_TOOL_GRANTS,
   matchesGrant,
   resolveToolGrants,
   type Grant,
@@ -61,40 +60,9 @@ test('canAccess: empty grants array denies everyone', () => {
   assert.ok(!canAccess({ agentId: 'a', role: 'owner' }, []));
 });
 
-// ── DEFAULT_TOOL_GRANTS parity with old GUEST_BLOCKED_TOOLS ─────────────
+// ── Tools without declared policy default to open ───────────────────────
 
-const OLD_GUEST_BLOCKED = new Set([
-  'exec',
-  'file_write', 'file_edit', 'file_delete',
-  'schedule_create', 'schedule_update', 'schedule_delete', 'schedule_trigger',
-  'mcp_enable', 'mcp_disable',
-]);
-
-test('guest is blocked from all previously blocked tools', () => {
-  const guest = buildPrincipal('a', 'u1', 'guest');
-  for (const tool of OLD_GUEST_BLOCKED) {
-    const grants = DEFAULT_TOOL_GRANTS[tool];
-    assert.ok(grants, `${tool} should have explicit grants`);
-    assert.ok(!canAccess(guest, grants!), `guest should be blocked from ${tool}`);
-  }
-});
-
-test('user can access all previously blocked tools', () => {
-  const user = buildPrincipal('a', 'u1', 'user');
-  for (const tool of OLD_GUEST_BLOCKED) {
-    const grants = DEFAULT_TOOL_GRANTS[tool]!;
-    assert.ok(canAccess(user, grants), `user should access ${tool}`);
-  }
-});
-
-test('owner can access all tools', () => {
-  const owner = buildPrincipal('a', 'u1', 'owner');
-  for (const [tool, grants] of Object.entries(DEFAULT_TOOL_GRANTS)) {
-    assert.ok(canAccess(owner, grants), `owner should access ${tool}`);
-  }
-});
-
-test('tools not in DEFAULT_TOOL_GRANTS default to open', () => {
+test('tools without declared policy default to open', () => {
   const grants = resolveToolGrants(undefined, 'some_random_tool');
   assert.ok(canAccess({ agentId: 'a', role: 'guest' }, grants));
 });
@@ -114,30 +82,10 @@ test('resolveToolGrants: DB row overrides default', () => {
   assert.ok(canAccess({ agentId: 'a', role: 'guest' }, grants));
 });
 
-test('resolveToolGrants: falls back to default when no row', () => {
+test('resolveToolGrants: falls back to open when no row and no declared policy', () => {
   const rows: PolicyRow[] = [];
   const grants = resolveToolGrants(rows, 'exec');
-  assert.ok(!canAccess({ agentId: 'a', role: 'guest' }, grants));
-});
-
-// ── owner-only tools ────────────────────────────────────────────────────
-
-test('instruction_update is owner-only', () => {
-  const grants = DEFAULT_TOOL_GRANTS['instruction_update']!;
-  assert.ok(canAccess(buildPrincipal('a', 'u1', 'owner'), grants));
-  assert.ok(!canAccess(buildPrincipal('a', 'u1', 'user'), grants));
-  assert.ok(!canAccess(buildPrincipal('a', 'u1', 'guest'), grants));
-});
-
-test('user management tools are owner-only', () => {
-  const ownerOnlyTools = ['user_list', 'user_identity_link', 'user_identity_unlink', 'user_role_set', 'user_merge'];
-  const user = buildPrincipal('a', 'u1', 'user');
-  const owner = buildPrincipal('a', 'u1', 'owner');
-  for (const tool of ownerOnlyTools) {
-    const grants = DEFAULT_TOOL_GRANTS[tool]!;
-    assert.ok(canAccess(owner, grants), `owner should access ${tool}`);
-    assert.ok(!canAccess(user, grants), `user should NOT access ${tool}`);
-  }
+  assert.ok(canAccess({ agentId: 'a', role: 'guest' }, grants));
 });
 
 // ── buildPrincipal ──────────────────────────────────────────────────────

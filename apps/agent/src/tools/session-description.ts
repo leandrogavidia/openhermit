@@ -15,7 +15,7 @@ type SessionDescriptionUpdateArgs = Static<typeof SessionDescriptionUpdateParams
 export const createSessionDescriptionUpdateTool = (
   context: ToolContext,
 ): PolicyAwareTool<typeof SessionDescriptionUpdateParams> => ({
-  policy: { kind: 'configurable', defaultGrants: [{ type: 'role', value: 'owner' }, { type: 'role', value: 'user' }] },
+  policy: { kind: 'fixed', grants: [] },
   name: 'session_description_update',
   label: 'Session Description Update',
   description:

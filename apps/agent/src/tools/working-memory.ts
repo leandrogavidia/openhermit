@@ -16,7 +16,7 @@ type WorkingMemoryUpdateArgs = Static<typeof WorkingMemoryUpdateParams>;
 export const createWorkingMemoryUpdateTool = (
   context: ToolContext,
 ): PolicyAwareTool<typeof WorkingMemoryUpdateParams> => ({
-  policy: { kind: 'configurable', defaultGrants: [{ type: 'role', value: 'owner' }, { type: 'role', value: 'user' }] },
+  policy: { kind: 'fixed', grants: [] },
   name: 'working_memory_update',
   label: 'Working Memory Update',
   description:
