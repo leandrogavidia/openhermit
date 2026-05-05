@@ -1559,6 +1559,7 @@ export class AgentRunner implements SessionRuntime {
 
     const GUEST_BLOCKED_TOOLS = new Set([
       'exec',
+      'file_write', 'file_delete',
       'schedule_create', 'schedule_update', 'schedule_delete', 'schedule_trigger',
       'mcp_enable', 'mcp_disable',
     ]);

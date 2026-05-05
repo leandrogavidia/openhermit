@@ -14,6 +14,7 @@ import { createWebToolset } from './tools/web.js';
 import { createSessionToolset } from './tools/session.js';
 import { createIdentityToolset, createUserToolset } from './tools/user.js';
 import { createExecToolset } from './tools/sandbox-exec.js';
+import { createFileToolset } from './tools/file.js';
 import { createScheduleToolset } from './tools/schedule.js';
 
 export type {
@@ -52,6 +53,7 @@ export const createBuiltInToolsets = (
   }
   if (context.agentId) {
     toolsets.push(createExecToolset(context));
+    toolsets.push(createFileToolset(context));
   }
   if (context.userStore && context.currentUserRole === 'owner') {
     toolsets.push(createUserToolset(context));

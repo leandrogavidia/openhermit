@@ -18,6 +18,8 @@ const READONLY_BLOCKED_TOOLS = new Set([
   'memory_delete',
   'working_memory_update',
   'exec',
+  'file_write',
+  'file_delete',
   'instruction_update',
   'session_description_update',
   'session_send',

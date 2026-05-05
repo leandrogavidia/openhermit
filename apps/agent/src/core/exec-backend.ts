@@ -1,5 +1,15 @@
 import { spawn } from 'node:child_process';
-import { cp, mkdir, readdir, readFile, rm } from 'node:fs/promises';
+import {
+  appendFile,
+  cp,
+  mkdir,
+  readdir,
+  readFile,
+  rm,
+  stat as fsStat,
+  unlink,
+  writeFile,
+} from 'node:fs/promises';
 import path from 'node:path';
 
 import { NotFoundError, ValidationError } from '@openhermit/shared';
@@ -27,6 +37,41 @@ const DAYTONA_DEFAULT_AGENT_HOME = '/home/daytona';
 // ── Result type (re-uses existing ContainerProcessResult) ─────────────────
 
 export type ExecResult = ContainerProcessResult;
+
+// ── File backend ──────────────────────────────────────────────────────────
+
+export type FileWriteMode = 'create' | 'overwrite' | 'append';
+
+export interface DirEntry {
+  name: string;
+  type: 'file' | 'directory' | 'other';
+  size?: number;
+}
+
+export interface FileStat {
+  type: 'file' | 'directory' | 'other';
+  size: number;
+  /** ISO timestamp of last modification. */
+  mtime: string;
+}
+
+export interface FileReadResult {
+  /** Raw bytes. Encode for transport at the tool layer. */
+  data: Buffer;
+}
+
+export interface FileBackend {
+  /**
+   * Read a file. Paths are interpreted as the agent sees them inside the
+   * sandbox (container-side). Throws if the path doesn't exist.
+   */
+  read(filePath: string): Promise<FileReadResult>;
+  write(filePath: string, data: Buffer, mode: FileWriteMode): Promise<void>;
+  list(dirPath: string): Promise<DirEntry[]>;
+  /** Returns null if the path does not exist. */
+  stat(filePath: string): Promise<FileStat | null>;
+  delete(filePath: string): Promise<void>;
+}
 
 // ── Backend interface ─────────────────────────────────────────────────────
 
@@ -56,6 +101,9 @@ export interface ExecBackend {
   syncSkills(skills: SyncSkillEntry[]): Promise<void>;
   /** Teardown (stop container, etc.). No-op if nothing to clean up. */
   shutdown(): Promise<void>;
+  /** First-class filesystem ops. Path-policy enforcement happens at the
+   * tool layer; the backend assumes the caller is authorised. */
+  readonly files: FileBackend;
 }
 
 /** Copy enabled skills into a host-side directory, removing stale entries. */
@@ -208,6 +256,172 @@ export const createExecBackend = (config: ExecBackendConfig, context: BackendFac
   return factory(config, context);
 };
 
+// ── Shared file-backend helpers ───────────────────────────────────────────
+
+/** Map a fs.stat to our DirEntry/FileStat type tag. */
+const fileTypeOf = (s: { isFile(): boolean; isDirectory(): boolean }): 'file' | 'directory' | 'other' =>
+  s.isFile() ? 'file' : s.isDirectory() ? 'directory' : 'other';
+
+/** Reject empty / relative / traversal-y paths. We require absolute, normalised. */
+const requireAbsolutePath = (p: string): string => {
+  if (!p || typeof p !== 'string') {
+    throw new ValidationError('path must be a non-empty string.');
+  }
+  if (!path.posix.isAbsolute(p)) {
+    throw new ValidationError(`path must be absolute (got "${p}").`);
+  }
+  const normalised = path.posix.normalize(p);
+  if (normalised.includes('/../')) {
+    throw new ValidationError(`path must not contain ".." segments (got "${p}").`);
+  }
+  return normalised;
+};
+
+/**
+ * HostFileBackend — operates directly on a local filesystem rooted at `root`.
+ * Used by:
+ *   - the `host` exec backend (root = agentHome)
+ *   - the `docker` exec backend with bind-mount (root = workspaceDir on host,
+ *     mapped to agentHome inside the container)
+ *
+ * The agent always speaks in container-side paths (e.g. `/root/foo`); this
+ * class translates them to host paths via `containerRoot` → `hostRoot`.
+ */
+class HostFileBackend implements FileBackend {
+  constructor(
+    private readonly hostRoot: string,
+    private readonly containerRoot: string,
+  ) {}
+
+  /** Translate a container-side path to a host-side absolute path. */
+  private resolve(containerPath: string): string {
+    const abs = requireAbsolutePath(containerPath);
+    if (abs !== this.containerRoot && !abs.startsWith(`${this.containerRoot}/`)) {
+      throw new ValidationError(
+        `path "${abs}" is outside the sandbox root "${this.containerRoot}". File tools only see paths under the agent's home; for system files use exec.`,
+      );
+    }
+    if (this.hostRoot === this.containerRoot) {
+      return abs;
+    }
+    const rel = abs === this.containerRoot ? '' : abs.slice(this.containerRoot.length + 1);
+    return rel ? path.join(this.hostRoot, rel) : this.hostRoot;
+  }
+
+  async read(filePath: string): Promise<FileReadResult> {
+    const resolved = this.resolve(filePath);
+    try {
+      const data = await readFile(resolved);
+      return { data };
+    } catch (err) {
+      if ((err as NodeJS.ErrnoException).code === 'ENOENT') {
+        throw new NotFoundError(`File not found: ${filePath}`);
+      }
+      throw err;
+    }
+  }
+
+  async write(filePath: string, data: Buffer, mode: FileWriteMode): Promise<void> {
+    const resolved = this.resolve(filePath);
+    await mkdir(path.dirname(resolved), { recursive: true });
+    if (mode === 'create') {
+      try {
+        await writeFile(resolved, data, { flag: 'wx' });
+      } catch (err) {
+        if ((err as NodeJS.ErrnoException).code === 'EEXIST') {
+          throw new ValidationError(`File already exists (mode=create): ${filePath}`);
+        }
+        throw err;
+      }
+    } else if (mode === 'append') {
+      await appendFile(resolved, data);
+    } else {
+      // overwrite — write to a temp then rename for atomicity.
+      const tmp = `${resolved}.tmp.${process.pid}.${Date.now()}`;
+      await writeFile(tmp, data);
+      const { rename } = await import('node:fs/promises');
+      await rename(tmp, resolved);
+    }
+  }
+
+  async list(dirPath: string): Promise<DirEntry[]> {
+    const resolved = this.resolve(dirPath);
+    let entries;
+    try {
+      entries = await readdir(resolved, { withFileTypes: true });
+    } catch (err) {
+      if ((err as NodeJS.ErrnoException).code === 'ENOENT') {
+        throw new NotFoundError(`Directory not found: ${dirPath}`);
+      }
+      if ((err as NodeJS.ErrnoException).code === 'ENOTDIR') {
+        throw new ValidationError(`Not a directory: ${dirPath}`);
+      }
+      throw err;
+    }
+    const result: DirEntry[] = [];
+    for (const e of entries) {
+      const entryPath = path.join(resolved, e.name);
+      let size: number | undefined;
+      if (e.isFile()) {
+        try {
+          size = (await fsStat(entryPath)).size;
+        } catch {
+          // skip — entry may have been removed between readdir and stat
+        }
+      }
+      result.push({
+        name: e.name,
+        type: fileTypeOf(e),
+        ...(size !== undefined ? { size } : {}),
+      });
+    }
+    return result;
+  }
+
+  async stat(filePath: string): Promise<FileStat | null> {
+    const resolved = this.resolve(filePath);
+    try {
+      const s = await fsStat(resolved);
+      return {
+        type: fileTypeOf(s),
+        size: s.size,
+        mtime: s.mtime.toISOString(),
+      };
+    } catch (err) {
+      if ((err as NodeJS.ErrnoException).code === 'ENOENT') return null;
+      throw err;
+    }
+  }
+
+  async delete(filePath: string): Promise<void> {
+    const resolved = this.resolve(filePath);
+    try {
+      await unlink(resolved);
+    } catch (err) {
+      if ((err as NodeJS.ErrnoException).code === 'ENOENT') {
+        throw new NotFoundError(`File not found: ${filePath}`);
+      }
+      if ((err as NodeJS.ErrnoException).code === 'EISDIR') {
+        throw new ValidationError(`Refusing to delete a directory (file_delete is single-file only): ${filePath}`);
+      }
+      throw err;
+    }
+  }
+}
+
+/** Stub backend for sandbox types where fs is not yet implemented. */
+class UnimplementedFileBackend implements FileBackend {
+  constructor(private readonly type: string) {}
+  private fail(): never {
+    throw new ValidationError(`File tools are not yet implemented for the "${this.type}" sandbox backend.`);
+  }
+  async read(): Promise<FileReadResult> { this.fail(); }
+  async write(): Promise<void> { this.fail(); }
+  async list(): Promise<DirEntry[]> { this.fail(); }
+  async stat(): Promise<FileStat | null> { this.fail(); }
+  async delete(): Promise<void> { this.fail(); }
+}
+
 // ── Docker backend ────────────────────────────────────────────────────────
 
 class DockerExecBackend implements ExecBackend {
@@ -216,6 +430,7 @@ class DockerExecBackend implements ExecBackend {
   readonly label: string;
   readonly username: string;
   readonly agentHome: string;
+  readonly files: FileBackend;
   private readonly config: WorkspaceContainerConfig;
 
   private readonly containerManager: DockerContainerManager;
@@ -243,6 +458,9 @@ class DockerExecBackend implements ExecBackend {
       ...(config.cpu_shares ? { cpu_shares: config.cpu_shares } : {}),
       ...(config.lifecycle ? { lifecycle: config.lifecycle } : {}),
     };
+    // Docker's workspaceDir is bind-mounted into the container at agentHome.
+    // Container path /<agentHome>/foo == host path <workspaceDir>/foo.
+    this.files = new HostFileBackend(this.workspaceDir, this.agentHome);
   }
 
   async ensure(): Promise<void> {
@@ -285,6 +503,7 @@ class HostExecBackend implements ExecBackend {
   readonly label: string;
   readonly username: string;
   readonly agentHome: string;
+  readonly files: FileBackend;
   private readonly shell: string;
   private readonly env: Record<string, string> | undefined;
   private readonly timeoutMs: number;
@@ -307,6 +526,9 @@ class HostExecBackend implements ExecBackend {
     this.shell = config.shell ?? 'sh';
     this.env = config.env;
     this.timeoutMs = config.timeout_ms ?? DEFAULT_TIMEOUT_MS;
+    // Host backend: container path == host path. No translation needed,
+    // but we still gate at agentHome to keep the sandbox surface consistent.
+    this.files = new HostFileBackend(this.agentHome, this.agentHome);
   }
 
   async ensure(): Promise<void> {
@@ -420,6 +642,7 @@ class E2BExecBackend implements ExecBackend {
   readonly label: string;
   readonly username: string;
   readonly agentHome: string;
+  readonly files: FileBackend = new UnimplementedFileBackend('e2b');
   private readonly template: string;
   private readonly timeoutMs: number;
   private readonly sandboxTimeoutMs: number;
@@ -668,6 +891,7 @@ class DaytonaExecBackend implements ExecBackend {
   readonly label: string;
   readonly username: string;
   readonly agentHome: string;
+  readonly files: FileBackend = new UnimplementedFileBackend('daytona');
   private readonly snapshot: string | undefined;
   private readonly image: string | undefined;
   private readonly timeoutMs: number;
