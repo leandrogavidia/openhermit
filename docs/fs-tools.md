@@ -1,6 +1,6 @@
-# Filesystem Tools (Proposal)
+# Filesystem Tools
 
-> **Status: design proposal, not yet implemented.** Prerequisite for the file portion of [access-policy.md](./access-policy.md).
+> **Status: implemented.** See `apps/agent/src/tools/file.ts` for the tool definitions and `apps/agent/src/core/exec-backend.ts` for the `FileBackend` implementations. This document was the original design proposal; the sections below now describe the shipped behavior.
 
 Today an agent reads and writes files by spawning shell commands through `exec` (`cat`, `tee`, `grep`, redirection). That works but makes path-level access policy impossible: by the time the gateway sees a shell string, it can't reliably tell which paths will be touched. To enforce per-path grants we need first-class file tools whose arguments are paths, not shell strings.
 
@@ -21,17 +21,16 @@ This document proposes those tools and the backend abstraction behind them.
 
 ## Tool surface
 
-Minimal first cut, intentionally narrow:
-
 | Tool | Args | Notes |
 |------|------|-------|
-| `file_read` | `sandbox`, `path` | Returns text. Binary returns base64 with a flag. Size cap. |
-| `file_write` | `sandbox`, `path`, `content`, `mode?` | `mode`: `'create'` / `'overwrite'` / `'append'`. |
-| `file_list` | `sandbox`, `path` | Directory listing with type + size. |
-| `file_stat` | `sandbox`, `path` | Existence, type, size, mtime. |
-| `file_delete` | `sandbox`, `path` | Single path; no recursive flag in v1. |
+| `file_read` | `path`, `sandbox?`, `offset?`, `limit?`, `encoding?` | Line-numbered text by default. `offset` (1-based line) and `limit` (line count) for large files. `encoding=base64` for binary. 5 MiB cap. |
+| `file_write` | `path`, `content`, `sandbox?`, `mode?`, `encoding?` | `mode`: `'overwrite'` (default) / `'create'` / `'append'`. Parent dirs created automatically. |
+| `file_edit` | `path`, `find_text`, `replace_text`, `sandbox?`, `replace_all?` | Exact-match find-and-replace. Fails if `find_text` not found. |
+| `file_list` | `path`, `sandbox?` | Directory listing with type + size. |
+| `file_stat` | `path`, `sandbox?` | Existence, type, size, mtime. Returns null if missing. |
+| `file_delete` | `path`, `sandbox?` | Single file; no recursive. |
 
-Notably absent: copy, move, chmod, chown, glob. Agents can compose those from the primitives above; if a real need shows up we add them — but the smaller the surface, the smaller the policy attack surface.
+Notably absent: copy, move, chmod, chown, glob. Agents can compose those from the primitives above or use `exec`.
 
 All five tools are **configurable** in the access-policy sense. Defaults:
 
@@ -68,19 +67,19 @@ The `sandbox_alias` column is added to `agent_policies` for this purpose. For no
 
 ## Backend abstraction
 
-Tools delegate to a single interface implemented per backend:
+Each `ExecBackend` exposes a `files: FileBackend` property:
 
 ```ts
 interface FileBackend {
-  read(sandbox: SandboxRef, path: string): Promise<Buffer>;
-  write(sandbox: SandboxRef, path: string, data: Buffer, mode: WriteMode): Promise<void>;
-  list(sandbox: SandboxRef, path: string): Promise<DirEntry[]>;
-  stat(sandbox: SandboxRef, path: string): Promise<FileStat | null>;
-  delete(sandbox: SandboxRef, path: string): Promise<void>;
+  read(path: string): Promise<FileReadResult>;
+  write(path: string, data: Buffer, mode: FileWriteMode): Promise<void>;
+  list(path: string): Promise<DirEntry[]>;
+  stat(path: string): Promise<FileStat | null>;
+  delete(path: string): Promise<void>;
 }
 ```
 
-Path policy enforcement happens in the tool handler **before** the backend call. By the time the backend method runs, the path is already authorised.
+The backend is scoped to a single sandbox — paths are relative to that sandbox's filesystem. Tool handlers resolve the backend via `context.execBackendManager.get(alias)` and call `backend.files.*`.
 
 ### `host` backend
 
@@ -88,11 +87,11 @@ Native Node `fs/promises` against the gateway machine's filesystem. Used by the 
 
 ### `e2b` backend
 
-Wraps the e2b SDK's filesystem methods (`sandbox.files.read` / `write` / `list`). Direct, no extra plumbing.
+`E2BFileBackend` wraps the e2b SDK's filesystem methods (`sandbox.files.read` / `write` / `list` / `getInfo` / `remove` / `exists`). Uses a lazy sandbox reference — the `sandbox` handle is injected after `ensure()` and cleared on `shutdown()`.
 
 ### `daytona` backend
 
-Wraps the daytona SDK's file APIs. Same shape as e2b.
+`DaytonaFileBackend` wraps the daytona SDK's file APIs (`sandbox.fs.downloadFile` / `uploadFile` / `listFiles` / `getFileDetails` / `deleteFile`). Same lazy-reference pattern as e2b.
 
 ### `docker` backend
 
@@ -100,30 +99,15 @@ This is the interesting case. Docker has no clean "read this file" API; the opti
 
 #### Bind-mount design
 
-When a docker sandbox is created, the gateway:
-
-1. Creates a host directory: `<agent_home>/sandboxes/<sandbox_alias>/workspace/`.
-2. Bind-mounts that directory into the container at `/workspace`.
-3. Stores the mapping `(sandbox_alias → host_path, container_path)` on the sandbox record.
-
-`FileBackend` for docker then becomes Node `fs` against the host path. The gateway never reaches into the container for file ops; it only reaches in for `exec`.
-
-Other paths inside the container (system files, installed binaries, etc.) are **not** exposed through the file tools. If an agent needs to read `/etc/something`, it uses `exec`, which goes through its own policy.
-
-#### UID alignment
-
-Files written by the gateway (host UID) must be readable/writable by the in-container agent process. Two viable approaches; we will pick one during implementation:
-
-- Run the container as the host UID (`--user $(id -u):$(id -g)`). Simplest.
-- Container entrypoint chowns `/workspace` to the container user on start.
-
-The first is preferred when feasible; it eliminates ownership drift entirely.
+The docker backend uses `HostFileBackend` with path translation. The gateway's `workspaceDir` (host path) is bind-mounted into the container at `agentHome`. `HostFileBackend` translates agent-visible paths (container root) to host-side paths before issuing `fs` syscalls, and enforces a boundary check to prevent path traversal escape.
 
 #### Path translation
 
-Policy `resource_key` values are stored as **container-side paths** (`/workspace/...`), because that's what agents see and reason about. The docker backend translates container path → host path via the sandbox's mount mapping before issuing fs syscalls.
-
-Other backends use the same convention: agents always speak in container/sandbox paths; the backend handles any translation.
+`HostFileBackend` is constructed with `(hostRoot, containerRoot)`:
+- Agents always use container-side paths (e.g. `/home/agent/workspace/foo.txt`)
+- The backend strips `containerRoot` and prepends `hostRoot` to get the host path
+- `realpath` + startsWith boundary check prevents escape via `..` or symlinks
+- When `hostRoot === containerRoot` (host backend), translation is a no-op but boundary check still applies
 
 ## exec coexistence
 
@@ -135,9 +119,9 @@ The fs tools enforce path policy. `exec` does not — it runs an opaque shell co
 
 Without that pairing, fs path policy is theatre — anyone with `exec` access bypasses it. The two layers are designed together.
 
-## Open questions
+## Resolved design decisions
 
-1. **Default workspace path.** Standardise on `/workspace/` across all backends? `host` backend already lives outside that convention.
-2. **Symlink handling.** Resolve and re-check, or refuse to follow? Refusing is safer; resolving is more useful for agent ergonomics.
-3. **Size limits.** Cap `file_read` at e.g. 5 MiB to keep tool results in-context-budget, with a `file_read_chunk(offset, length)` for larger files? Or a `file_search` primitive instead?
-4. **Write atomicity.** Always write-to-temp-then-rename for `overwrite` mode, or trust the caller? Atomic-by-default avoids partial-write corruption.
+1. **Workspace path.** Each backend uses its own `agentHome` / `containerRoot`; no forced convention. `HostFileBackend` translates between the two via path mapping.
+2. **Symlink handling.** `realpath` + boundary check — symlinks are resolved and re-checked against the workspace root to prevent escape.
+3. **Size limits.** `file_read` caps at 5 MiB. For large files, agents use `offset` (1-based line) and `limit` (line count) to read ranges.
+4. **Write atomicity.** Direct `writeFile` (no temp+rename) — atomic rename fails on docker bind-mounts where the gateway UID differs from the container UID.
