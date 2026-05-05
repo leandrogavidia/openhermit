@@ -1525,6 +1525,7 @@ export class AgentRunner implements SessionRuntime {
         } : {}),
         ...(this.channelOutbound.size > 0 ? { channelOutbound: this.channelOutbound } : {}),
         ...(isOwnerOrUnresolved ? { scheduleStore: this.store.schedules } : {}),
+        ...(isOwnerOrUnresolved && this.options.policyStore ? { policyStore: this.options.policyStore } : {}),
         ...(isOwnerOrUnresolved ? { onScheduleChange: () => this.scheduler?.reload() } : {}),
         ...(input.approvalCallback ? { approvalCallback: input.approvalCallback } : {}),
         ...(input.approvedCache ? { approvedCache: input.approvedCache } : {}),

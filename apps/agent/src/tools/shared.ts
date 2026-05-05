@@ -2,7 +2,7 @@ import type { AgentTool } from '@mariozechner/pi-agent-core';
 import type { TSchema } from 'typebox';
 import type { ChannelOutbound } from '@openhermit/protocol';
 import { ValidationError } from '@openhermit/shared';
-import type { InstructionStore, MemoryProvider, MessageStore, ScheduleStore, SessionStore, StoreScope, UserStore } from '@openhermit/store';
+import type { InstructionStore, MemoryProvider, MessageStore, PolicyStore, ScheduleStore, SessionStore, StoreScope, UserStore } from '@openhermit/store';
 
 import { AgentSecurity, type ExecBackendManager, type ToolPolicy } from '../core/index.js';
 import type { WebProvider } from '../web/index.js';
@@ -39,6 +39,8 @@ const READONLY_BLOCKED_TOOLS = new Set([
   'schedule_update',
   'schedule_delete',
   'schedule_trigger',
+  'policy_set',
+  'policy_delete',
 ]);
 
 export type ApprovalDecision = 'approved' | 'rejected' | 'timed_out' | 'cancelled';
@@ -78,6 +80,7 @@ export interface ToolContext {
   agentId?: string;
   execBackendManager?: ExecBackendManager;
   scheduleStore?: ScheduleStore;
+  policyStore?: PolicyStore;
   /** Channel outbound adapters keyed by channel name (e.g. 'telegram'). */
   channelOutbound?: Map<string, ChannelOutbound>;
   onExec?: () => void;
