@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.5.2 — 2026-05-05
+
+### Fixes
+
+- `hermit --version` now reads from `package.json` instead of a hardcoded string.
+
+---
+
 ## 0.5.1 — 2026-05-05
 
 ### First-class filesystem tools
