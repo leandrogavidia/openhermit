@@ -58,8 +58,9 @@ export function PoliciesPanel() {
         <p className="eyebrow">Access Policies</p>
         <p className="policies-panel__hint">
           Override the default access level for tools. Each policy maps a tool
-          name to a set of grants that control who can use it. Tools without a
-          custom policy use their built-in defaults.
+          name to a set of grants that control who can use it. Use <code>*</code> suffix
+          for prefix matching (e.g. <code>mcp__weather__*</code> covers all tools
+          from that MCP server). Tools without a custom policy use their built-in defaults.
         </p>
       </div>
 
@@ -156,7 +157,7 @@ function CreatePolicyDialog({ onClose, onCreated }: { onClose: () => void; onCre
             required
             value={resourceKey}
             onChange={(e) => setResourceKey(e.target.value)}
-            placeholder="e.g. exec, file_write"
+            placeholder="e.g. exec, file_write, mcp__server__*"
             disabled={busy}
           />
         </label>

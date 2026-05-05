@@ -52,6 +52,25 @@ const OPEN: Grant[] = [{ type: 'any' }];
 
 // ── Resolution helpers ──────────────────────────────────────────────────
 
+const findPolicyRow = (
+  rows: PolicyRow[],
+  resourceType: string,
+  key: string,
+): PolicyRow | undefined => {
+  // Exact match first
+  const exact = rows.find(
+    (r) => r.resourceType === resourceType && r.resourceKey === key,
+  );
+  if (exact) return exact;
+  // Prefix match: resourceKey ending with '*' (e.g. "mcp__weather__*")
+  return rows.find(
+    (r) =>
+      r.resourceType === resourceType &&
+      r.resourceKey.endsWith('*') &&
+      key.startsWith(r.resourceKey.slice(0, -1)),
+  );
+};
+
 export const resolveToolGrants = (
   policyRows: PolicyRow[] | undefined,
   toolName: string,
@@ -59,20 +78,14 @@ export const resolveToolGrants = (
 ): Grant[] => {
   if (declaredPolicy) {
     if (declaredPolicy.kind === 'fixed') return declaredPolicy.grants;
-    // configurable: DB row overrides defaultGrants
     if (policyRows) {
-      const row = policyRows.find(
-        (r) => r.resourceType === 'tool' && r.resourceKey === toolName,
-      );
+      const row = findPolicyRow(policyRows, 'tool', toolName);
       if (row) return row.grants as Grant[];
     }
     return declaredPolicy.defaultGrants;
   }
-  // No declared policy (e.g. external MCP tools) — DB row or open
   if (policyRows) {
-    const row = policyRows.find(
-      (r) => r.resourceType === 'tool' && r.resourceKey === toolName,
-    );
+    const row = findPolicyRow(policyRows, 'tool', toolName);
     if (row) return row.grants as Grant[];
   }
   return OPEN;

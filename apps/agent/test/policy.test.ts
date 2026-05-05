@@ -88,6 +88,57 @@ test('resolveToolGrants: falls back to open when no row and no declared policy',
   assert.ok(canAccess({ agentId: 'a', role: 'guest' }, grants));
 });
 
+// ── prefix matching ─────────────────────────────────────────────────────
+
+test('resolveToolGrants: prefix pattern matches MCP tools', () => {
+  const rows: PolicyRow[] = [{
+    agentId: 'a',
+    sandboxAlias: null,
+    resourceType: 'tool',
+    mode: null,
+    resourceKey: 'mcp__weather__*',
+    grants: [{ type: 'role', value: 'owner' }],
+  }];
+  const grants = resolveToolGrants(rows, 'mcp__weather__get_forecast');
+  assert.ok(canAccess({ agentId: 'a', role: 'owner' }, grants));
+  assert.ok(!canAccess({ agentId: 'a', role: 'guest' }, grants));
+});
+
+test('resolveToolGrants: prefix pattern does not match unrelated tools', () => {
+  const rows: PolicyRow[] = [{
+    agentId: 'a',
+    sandboxAlias: null,
+    resourceType: 'tool',
+    mode: null,
+    resourceKey: 'mcp__weather__*',
+    grants: [{ type: 'role', value: 'owner' }],
+  }];
+  const grants = resolveToolGrants(rows, 'mcp__calendar__list');
+  // No match → falls back to OPEN
+  assert.ok(canAccess({ agentId: 'a', role: 'guest' }, grants));
+});
+
+test('resolveToolGrants: exact match takes priority over prefix', () => {
+  const rows: PolicyRow[] = [
+    {
+      agentId: 'a', sandboxAlias: null, resourceType: 'tool', mode: null,
+      resourceKey: 'mcp__weather__*',
+      grants: [{ type: 'role', value: 'owner' }],
+    },
+    {
+      agentId: 'a', sandboxAlias: null, resourceType: 'tool', mode: null,
+      resourceKey: 'mcp__weather__public_status',
+      grants: [{ type: 'any' }],
+    },
+  ];
+  // Exact match → open to everyone
+  const grants = resolveToolGrants(rows, 'mcp__weather__public_status');
+  assert.ok(canAccess({ agentId: 'a', role: 'guest' }, grants));
+  // Other tools in same prefix → owner only
+  const grants2 = resolveToolGrants(rows, 'mcp__weather__get_forecast');
+  assert.ok(!canAccess({ agentId: 'a', role: 'guest' }, grants2));
+});
+
 // ── buildPrincipal ──────────────────────────────────────────────────────
 
 test('buildPrincipal omits undefined fields', () => {
