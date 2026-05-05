@@ -1,8 +1,8 @@
-import type { AgentTool } from '@mariozechner/pi-agent-core';
 import { Type, type Static } from '@mariozechner/pi-ai';
 import { ValidationError } from '@openhermit/shared';
 
 import {
+  type PolicyAwareTool,
   type Toolset,
   type ToolContext,
   asTextContent,
@@ -80,7 +80,8 @@ type MemoryDeleteArgs = Static<typeof MemoryDeleteParams>;
 export const createMemoryGetTool = ({
   memoryProvider,
   storeScope,
-}: ToolContext): AgentTool<typeof MemoryGetParams> => ({
+}: ToolContext): PolicyAwareTool<typeof MemoryGetParams> => ({
+  policy: { kind: 'fixed', grants: [{ type: 'any' }] },
   name: 'memory_get',
   label: 'Get Memory',
   description:
@@ -124,7 +125,8 @@ type MemoryListArgs = Static<typeof MemoryListParams>;
 export const createMemoryListTool = ({
   memoryProvider,
   storeScope,
-}: ToolContext): AgentTool<typeof MemoryListParams> => ({
+}: ToolContext): PolicyAwareTool<typeof MemoryListParams> => ({
+  policy: { kind: 'fixed', grants: [{ type: 'any' }] },
   name: 'memory_list',
   label: 'List Memory',
   description:
@@ -162,7 +164,8 @@ export const createMemoryListTool = ({
 export const createMemoryRecallTool = ({
   memoryProvider,
   storeScope,
-}: ToolContext): AgentTool<typeof MemoryRecallParams> => ({
+}: ToolContext): PolicyAwareTool<typeof MemoryRecallParams> => ({
+  policy: { kind: 'fixed', grants: [{ type: 'any' }] },
   name: 'memory_recall',
   label: 'Recall Memory',
   description:
@@ -203,7 +206,8 @@ export const createMemoryAddTool = ({
   storeScope,
   hookBus,
   agentId,
-}: ToolContext): AgentTool<typeof MemoryAddParams> => ({
+}: ToolContext): PolicyAwareTool<typeof MemoryAddParams> => ({
+  policy: { kind: 'configurable', defaultGrants: [{ type: 'role', value: 'owner' }, { type: 'role', value: 'user' }] },
   name: 'memory_add',
   label: 'Add Memory',
   description:
@@ -249,7 +253,8 @@ export const createMemoryUpdateTool = ({
   storeScope,
   hookBus,
   agentId,
-}: ToolContext): AgentTool<typeof MemoryUpdateParams> => ({
+}: ToolContext): PolicyAwareTool<typeof MemoryUpdateParams> => ({
+  policy: { kind: 'configurable', defaultGrants: [{ type: 'role', value: 'owner' }, { type: 'role', value: 'user' }] },
   name: 'memory_update',
   label: 'Update Memory',
   description:
@@ -292,7 +297,8 @@ export const createMemoryDeleteTool = ({
   security,
   memoryProvider,
   storeScope,
-}: ToolContext): AgentTool<typeof MemoryDeleteParams> => ({
+}: ToolContext): PolicyAwareTool<typeof MemoryDeleteParams> => ({
+  policy: { kind: 'configurable', defaultGrants: [{ type: 'role', value: 'owner' }, { type: 'role', value: 'user' }] },
   name: 'memory_delete',
   label: 'Delete Memory',
   description:

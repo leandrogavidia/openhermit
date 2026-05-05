@@ -1,8 +1,8 @@
-import type { AgentTool } from '@mariozechner/pi-agent-core';
 import { Type, type Static } from '@mariozechner/pi-ai';
 import { ValidationError } from '@openhermit/shared';
 
 import {
+  type PolicyAwareTool,
   type Toolset,
   type ToolContext,
   asTextContent,
@@ -71,7 +71,8 @@ type ScheduleTriggerArgs = Static<typeof ScheduleTriggerParams>;
 
 // ── Tools ───────────────────────────────────────────────────────────
 
-const createScheduleListTool = (context: ToolContext): AgentTool<typeof ScheduleListParams> => ({
+const createScheduleListTool = (context: ToolContext): PolicyAwareTool<typeof ScheduleListParams> => ({
+  policy: { kind: 'fixed', grants: [{ type: 'any' }] },
   name: 'schedule_list',
   label: 'List Schedules',
   description: 'List all scheduled jobs for this agent. Shows type, status, cron expression, next run time, and run count.',
@@ -111,7 +112,8 @@ const createScheduleListTool = (context: ToolContext): AgentTool<typeof Schedule
   },
 });
 
-const createScheduleCreateTool = (context: ToolContext): AgentTool<typeof ScheduleCreateParams> => ({
+const createScheduleCreateTool = (context: ToolContext): PolicyAwareTool<typeof ScheduleCreateParams> => ({
+  policy: { kind: 'configurable', defaultGrants: [{ type: 'role', value: 'owner' }, { type: 'role', value: 'user' }] },
   name: 'schedule_create',
   label: 'Create Schedule',
   description:
@@ -167,7 +169,8 @@ const createScheduleCreateTool = (context: ToolContext): AgentTool<typeof Schedu
   },
 });
 
-const createScheduleUpdateTool = (context: ToolContext): AgentTool<typeof ScheduleUpdateParams> => ({
+const createScheduleUpdateTool = (context: ToolContext): PolicyAwareTool<typeof ScheduleUpdateParams> => ({
+  policy: { kind: 'configurable', defaultGrants: [{ type: 'role', value: 'owner' }, { type: 'role', value: 'user' }] },
   name: 'schedule_update',
   label: 'Update Schedule',
   description: 'Update an existing schedule. Can change status (active/paused), prompt, or cron expression.',
@@ -201,7 +204,8 @@ const createScheduleUpdateTool = (context: ToolContext): AgentTool<typeof Schedu
   },
 });
 
-const createScheduleDeleteTool = (context: ToolContext): AgentTool<typeof ScheduleDeleteParams> => ({
+const createScheduleDeleteTool = (context: ToolContext): PolicyAwareTool<typeof ScheduleDeleteParams> => ({
+  policy: { kind: 'configurable', defaultGrants: [{ type: 'role', value: 'owner' }, { type: 'role', value: 'user' }] },
   name: 'schedule_delete',
   label: 'Delete Schedule',
   description: 'Delete a scheduled job permanently.',
@@ -229,7 +233,8 @@ const createScheduleDeleteTool = (context: ToolContext): AgentTool<typeof Schedu
   },
 });
 
-const createScheduleTriggerTool = (context: ToolContext): AgentTool<typeof ScheduleTriggerParams> => ({
+const createScheduleTriggerTool = (context: ToolContext): PolicyAwareTool<typeof ScheduleTriggerParams> => ({
+  policy: { kind: 'configurable', defaultGrants: [{ type: 'role', value: 'owner' }, { type: 'role', value: 'user' }] },
   name: 'schedule_trigger',
   label: 'Trigger Schedule Now',
   description: 'Trigger a scheduled job immediately, regardless of its next run time. The job runs in its configured session.',
@@ -262,7 +267,8 @@ const createScheduleTriggerTool = (context: ToolContext): AgentTool<typeof Sched
   },
 });
 
-const createScheduleRunsTool = (context: ToolContext): AgentTool<typeof ScheduleRunsParams> => ({
+const createScheduleRunsTool = (context: ToolContext): PolicyAwareTool<typeof ScheduleRunsParams> => ({
+  policy: { kind: 'fixed', grants: [{ type: 'any' }] },
   name: 'schedule_runs',
   label: 'Schedule Run History',
   description: 'View the execution history of a scheduled job. Shows status, duration, session ID, and errors for recent runs.',

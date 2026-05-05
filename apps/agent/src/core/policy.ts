@@ -26,6 +26,12 @@ export interface PolicyRow {
   grants: unknown[];
 }
 
+// ── Tool policy ─────────────────────────────────────────────────────────
+
+export type ToolPolicy =
+  | { kind: 'fixed'; grants: Grant[] }
+  | { kind: 'configurable'; defaultGrants: Grant[] };
+
 // ── Core evaluation ─────────────────────────────────────────────────────
 
 export const matchesGrant = (principal: Principal, grant: Grant): boolean => {
@@ -92,7 +98,20 @@ export const DEFAULT_TOOL_GRANTS: Record<string, Grant[]> = {
 export const resolveToolGrants = (
   policyRows: PolicyRow[] | undefined,
   toolName: string,
+  declaredPolicy?: ToolPolicy,
 ): Grant[] => {
+  if (declaredPolicy) {
+    if (declaredPolicy.kind === 'fixed') return declaredPolicy.grants;
+    // configurable: DB row overrides defaultGrants
+    if (policyRows) {
+      const row = policyRows.find(
+        (r) => r.resourceType === 'tool' && r.resourceKey === toolName,
+      );
+      if (row) return row.grants as Grant[];
+    }
+    return declaredPolicy.defaultGrants;
+  }
+  // No declared policy — legacy tools use DEFAULT_TOOL_GRANTS map
   if (policyRows) {
     const row = policyRows.find(
       (r) => r.resourceType === 'tool' && r.resourceKey === toolName,

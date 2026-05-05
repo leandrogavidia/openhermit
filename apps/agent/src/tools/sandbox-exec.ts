@@ -1,7 +1,7 @@
 import { Type, type Static } from '@mariozechner/pi-ai';
-import type { AgentTool } from '@mariozechner/pi-agent-core';
 
 import {
+  type PolicyAwareTool,
   type Toolset,
   type ToolContext,
   asTextContent,
@@ -24,7 +24,8 @@ type SandboxExecArgs = Static<typeof SandboxExecParams>;
 
 export const createSandboxExecTool = (
   context: ToolContext,
-): AgentTool<typeof SandboxExecParams> => ({
+): PolicyAwareTool<typeof SandboxExecParams> => ({
+  policy: { kind: 'configurable', defaultGrants: [{ type: 'role', value: 'owner' }, { type: 'role', value: 'user' }] },
   name: 'exec',
   label: 'Exec',
   description: buildExecDescription(context),

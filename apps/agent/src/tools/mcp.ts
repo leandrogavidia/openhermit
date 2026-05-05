@@ -1,9 +1,8 @@
 import { Type, type Static } from '@mariozechner/pi-ai';
-import type { AgentTool } from '@mariozechner/pi-agent-core';
 import type { McpServerStore } from '@openhermit/store';
 
 import type { McpClientManager } from '../mcp-client.js';
-import { asTextContent, formatJson, type Toolset } from './shared.js';
+import { type PolicyAwareTool, asTextContent, formatJson, type Toolset } from './shared.js';
 
 const McpEnableParams = Type.Object({
   serverId: Type.String({ description: 'The ID of the MCP server to enable.' }),
@@ -15,7 +14,8 @@ const McpDisableParams = Type.Object({
 
 export const createMcpStatusTool = (
   mcpClientManager: McpClientManager,
-): AgentTool<any> => ({
+): PolicyAwareTool<any> => ({
+  policy: { kind: 'fixed', grants: [{ type: 'any' }] },
   name: 'mcp_status',
   label: 'MCP Status',
   description: 'View the connection status of all MCP servers, including available tools and errors.',
@@ -33,7 +33,8 @@ export const createMcpEnableTool = (
   mcpClientManager: McpClientManager,
   mcpServerStore: McpServerStore,
   agentId: string,
-): AgentTool<typeof McpEnableParams> => ({
+): PolicyAwareTool<typeof McpEnableParams> => ({
+  policy: { kind: 'configurable', defaultGrants: [{ type: 'role', value: 'owner' }, { type: 'role', value: 'user' }] },
   name: 'mcp_enable',
   label: 'MCP Enable',
   description: 'Enable and connect an MCP server for this agent. The server must already be registered in the system.',
@@ -54,7 +55,8 @@ export const createMcpDisableTool = (
   mcpClientManager: McpClientManager,
   mcpServerStore: McpServerStore,
   agentId: string,
-): AgentTool<typeof McpDisableParams> => ({
+): PolicyAwareTool<typeof McpDisableParams> => ({
+  policy: { kind: 'configurable', defaultGrants: [{ type: 'role', value: 'owner' }, { type: 'role', value: 'user' }] },
   name: 'mcp_disable',
   label: 'MCP Disable',
   description: 'Disable and disconnect an MCP server for this agent.',

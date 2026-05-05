@@ -1,8 +1,6 @@
 import { Type, type Static } from '@mariozechner/pi-ai';
-import type { AgentTool } from '@mariozechner/pi-agent-core';
 
-import type { ToolContext } from './shared.js';
-import { asTextContent, ensureAutonomyAllows } from './shared.js';
+import { type PolicyAwareTool, type ToolContext, asTextContent, ensureAutonomyAllows } from './shared.js';
 
 const SessionDescriptionUpdateParams = Type.Object({
   description: Type.String({
@@ -16,7 +14,8 @@ type SessionDescriptionUpdateArgs = Static<typeof SessionDescriptionUpdateParams
 
 export const createSessionDescriptionUpdateTool = (
   context: ToolContext,
-): AgentTool<typeof SessionDescriptionUpdateParams> => ({
+): PolicyAwareTool<typeof SessionDescriptionUpdateParams> => ({
+  policy: { kind: 'configurable', defaultGrants: [{ type: 'role', value: 'owner' }, { type: 'role', value: 'user' }] },
   name: 'session_description_update',
   label: 'Session Description Update',
   description:

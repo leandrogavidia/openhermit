@@ -1,9 +1,7 @@
-import type { AgentTool } from '@mariozechner/pi-agent-core';
-
 import { createMemoryAddTool, createMemoryDeleteTool, createMemoryGetTool, createMemoryRecallTool, createMemoryUpdateTool } from '../tools/memory.js';
 import { createSessionDescriptionUpdateTool } from '../tools/session-description.js';
 import { createWorkingMemoryUpdateTool } from '../tools/working-memory.js';
-import type { ToolContext } from '../tools/shared.js';
+import type { PolicyAwareTool, ToolContext } from '../tools/shared.js';
 
 /**
  * Creates the tool set available to the introspection agent.
@@ -12,8 +10,8 @@ import type { ToolContext } from '../tools/shared.js';
  */
 export const createIntrospectionTools = (
   context: ToolContext,
-): AgentTool<any>[] => {
-  const tools: AgentTool<any>[] = [];
+): PolicyAwareTool[] => {
+  const tools: PolicyAwareTool[] = [];
 
   if (context.memoryProvider) {
     tools.push(

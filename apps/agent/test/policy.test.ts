@@ -10,6 +10,7 @@ import {
   type Grant,
   type PolicyRow,
   type Principal,
+  type ToolPolicy,
 } from '../src/core/index.js';
 
 // ── matchesGrant ────────────────────────────────────────────────────────
@@ -153,4 +154,50 @@ test('buildPrincipal includes provided fields', () => {
   assert.equal(p.agentId, 'agent-1');
   assert.equal(p.userId, 'user-1');
   assert.equal(p.role, 'owner');
+});
+
+// ── fixed vs configurable ToolPolicy ────────────────────────────────────
+
+test('resolveToolGrants: fixed policy ignores DB rows', () => {
+  const fixedPolicy: ToolPolicy = { kind: 'fixed', grants: [{ type: 'role', value: 'owner' }] };
+  const rows: PolicyRow[] = [{
+    agentId: 'a',
+    sandboxAlias: null,
+    resourceType: 'tool',
+    mode: null,
+    resourceKey: 'my_tool',
+    grants: [{ type: 'any' }],
+  }];
+  const grants = resolveToolGrants(rows, 'my_tool', fixedPolicy);
+  // Fixed policy should NOT be overridden by DB row
+  assert.ok(!canAccess({ agentId: 'a', role: 'guest' }, grants));
+  assert.ok(canAccess({ agentId: 'a', role: 'owner' }, grants));
+});
+
+test('resolveToolGrants: configurable policy uses DB row when present', () => {
+  const configurablePolicy: ToolPolicy = {
+    kind: 'configurable',
+    defaultGrants: [{ type: 'role', value: 'owner' }],
+  };
+  const rows: PolicyRow[] = [{
+    agentId: 'a',
+    sandboxAlias: null,
+    resourceType: 'tool',
+    mode: null,
+    resourceKey: 'my_tool',
+    grants: [{ type: 'any' }],
+  }];
+  const grants = resolveToolGrants(rows, 'my_tool', configurablePolicy);
+  // DB row should override the default
+  assert.ok(canAccess({ agentId: 'a', role: 'guest' }, grants));
+});
+
+test('resolveToolGrants: configurable policy falls back to defaultGrants', () => {
+  const configurablePolicy: ToolPolicy = {
+    kind: 'configurable',
+    defaultGrants: [{ type: 'role', value: 'owner' }],
+  };
+  const grants = resolveToolGrants([], 'my_tool', configurablePolicy);
+  assert.ok(!canAccess({ agentId: 'a', role: 'guest' }, grants));
+  assert.ok(canAccess({ agentId: 'a', role: 'owner' }, grants));
 });

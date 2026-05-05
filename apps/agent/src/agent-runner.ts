@@ -1570,7 +1570,7 @@ export class AgentRunner implements SessionRuntime {
       ? await this.options.policyStore.list(this.scope.agentId, 'tool')
       : undefined;
     const filteredTools = tools.filter((t: any) =>
-      canAccess(principal, resolveToolGrants(policyRows, t.name)),
+      canAccess(principal, resolveToolGrants(policyRows, t.name, t.policy)),
     );
 
     const currentUser = input.userId && input.userRole

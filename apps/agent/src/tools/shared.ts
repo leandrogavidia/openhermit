@@ -1,15 +1,20 @@
 import type { AgentTool } from '@mariozechner/pi-agent-core';
+import type { TSchema } from 'typebox';
 import type { ChannelOutbound } from '@openhermit/protocol';
 import { ValidationError } from '@openhermit/shared';
 import type { InstructionStore, MemoryProvider, MessageStore, ScheduleStore, SessionStore, StoreScope, UserStore } from '@openhermit/store';
 
-import { AgentSecurity, type ExecBackendManager } from '../core/index.js';
+import { AgentSecurity, type ExecBackendManager, type ToolPolicy } from '../core/index.js';
 import type { WebProvider } from '../web/index.js';
+
+export interface PolicyAwareTool<TParameters extends TSchema = TSchema, TDetails = any> extends AgentTool<TParameters, TDetails> {
+  policy?: ToolPolicy;
+}
 
 export interface Toolset {
   id: string;
   description: string;
-  tools: AgentTool<any>[];
+  tools: PolicyAwareTool[];
 }
 
 const READONLY_BLOCKED_TOOLS = new Set([

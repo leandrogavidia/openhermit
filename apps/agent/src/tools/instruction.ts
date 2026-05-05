@@ -1,7 +1,7 @@
-import type { AgentTool } from '@mariozechner/pi-agent-core';
 import { Type, type Static } from '@mariozechner/pi-ai';
 
 import {
+  type PolicyAwareTool,
   type Toolset,
   type ToolContext,
   asTextContent,
@@ -24,7 +24,8 @@ export const createInstructionUpdateTool = ({
   security,
   instructionStore,
   storeScope,
-}: ToolContext): AgentTool<typeof InstructionUpdateParams> => ({
+}: ToolContext): PolicyAwareTool<typeof InstructionUpdateParams> => ({
+  policy: { kind: 'fixed', grants: [{ type: 'role', value: 'owner' }] },
   name: 'instruction_update',
   label: 'Update Instruction',
   description:

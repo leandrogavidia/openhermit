@@ -1,9 +1,7 @@
 import { Type, type Static } from '@mariozechner/pi-ai';
-import type { AgentTool } from '@mariozechner/pi-agent-core';
 import { ValidationError } from '@openhermit/shared';
 
-import type { ToolContext } from './shared.js';
-import { asTextContent } from './shared.js';
+import { type PolicyAwareTool, type ToolContext, asTextContent } from './shared.js';
 
 const MAX_RESPONSE_BYTES = 200_000;
 
@@ -36,7 +34,8 @@ type WebFetchArgs = Static<typeof WebFetchParams>;
 
 export const createWebFetchTool = ({
   webProvider,
-}: ToolContext): AgentTool<typeof WebFetchParams> => ({
+}: ToolContext): PolicyAwareTool<typeof WebFetchParams> => ({
+  policy: { kind: 'fixed', grants: [{ type: 'any' }] },
   name: 'web_fetch',
   label: 'Web Fetch',
   description:

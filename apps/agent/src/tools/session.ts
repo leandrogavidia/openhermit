@@ -1,9 +1,9 @@
-import type { AgentTool } from '@mariozechner/pi-agent-core';
 import { Type, type Static } from '@mariozechner/pi-ai';
 import type { ChannelOutbound } from '@openhermit/protocol';
 import { ValidationError } from '@openhermit/shared';
 
 import {
+  type PolicyAwareTool,
   type Toolset,
   type ToolContext,
   asTextContent,
@@ -37,7 +37,8 @@ type SessionSummaryArgs = Static<typeof SessionSummaryParams>;
 
 // ── Tools ───────────────────────────────────────────────────────────
 
-export const createSessionListTool = (context: ToolContext): AgentTool<typeof SessionListParams> => ({
+export const createSessionListTool = (context: ToolContext): PolicyAwareTool<typeof SessionListParams> => ({
+  policy: { kind: 'fixed', grants: [{ type: 'any' }] },
   name: 'session_list',
   label: 'List Sessions',
   description: 'List sessions with their descriptions, last activity, message counts, and source. Optionally filter by channel.',
@@ -98,7 +99,8 @@ export const createSessionListTool = (context: ToolContext): AgentTool<typeof Se
   },
 });
 
-export const createSessionReadTool = (context: ToolContext): AgentTool<typeof SessionReadParams> => ({
+export const createSessionReadTool = (context: ToolContext): PolicyAwareTool<typeof SessionReadParams> => ({
+  policy: { kind: 'fixed', grants: [{ type: 'any' }] },
   name: 'session_read',
   label: 'Read Session Messages',
   description: 'Read message history from a specified session. Returns recent user and assistant messages. Use this to review what happened in another session.',
@@ -150,7 +152,8 @@ export const createSessionReadTool = (context: ToolContext): AgentTool<typeof Se
   },
 });
 
-export const createSessionSummaryTool = (context: ToolContext): AgentTool<typeof SessionSummaryParams> => ({
+export const createSessionSummaryTool = (context: ToolContext): PolicyAwareTool<typeof SessionSummaryParams> => ({
+  policy: { kind: 'fixed', grants: [{ type: 'any' }] },
   name: 'session_summary',
   label: 'Session Summary',
   description: 'Get a summary of a session: description, working memory, message count, and recent activity. Useful for quickly understanding what happened in a session.',
@@ -250,7 +253,8 @@ const resolveOutbound = (
   return undefined;
 };
 
-export const createSessionSendTool = (context: ToolContext): AgentTool<typeof SessionSendParams> => ({
+export const createSessionSendTool = (context: ToolContext): PolicyAwareTool<typeof SessionSendParams> => ({
+  policy: { kind: 'configurable', defaultGrants: [{ type: 'role', value: 'owner' }, { type: 'role', value: 'user' }] },
   name: 'session_send',
   label: 'Send Message to Session',
   description:
@@ -344,7 +348,7 @@ These tools let you review what happened in other sessions without switching con
 - "send a message to user X on Telegram" → \`session_list\` (find their session) → \`session_send\``;
 
 export const createSessionToolset = (context: ToolContext): Toolset => {
-  const tools: AgentTool<any>[] = [
+  const tools: PolicyAwareTool[] = [
     createSessionListTool(context),
     createSessionReadTool(context),
     createSessionSummaryTool(context),

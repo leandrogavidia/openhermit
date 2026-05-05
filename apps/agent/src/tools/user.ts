@@ -1,8 +1,8 @@
-import type { AgentTool } from '@mariozechner/pi-agent-core';
 import { Type, type Static } from '@mariozechner/pi-ai';
 import { ValidationError } from '@openhermit/shared';
 
 import {
+  type PolicyAwareTool,
   type Toolset,
   type ToolContext,
   asTextContent,
@@ -46,7 +46,8 @@ const UserMergeParams = Type.Object({
 
 type UserMergeArgs = Static<typeof UserMergeParams>;
 
-export const createUserListTool = (context: ToolContext): AgentTool<typeof UserListParams> => ({
+export const createUserListTool = (context: ToolContext): PolicyAwareTool<typeof UserListParams> => ({
+  policy: { kind: 'fixed', grants: [{ type: 'role', value: 'owner' }] },
   name: 'user_list',
   label: 'List Users',
   description: 'List all users with their identities and roles.',
@@ -80,7 +81,8 @@ export const createUserListTool = (context: ToolContext): AgentTool<typeof UserL
   },
 });
 
-export const createUserIdentityLinkTool = (context: ToolContext): AgentTool<typeof UserIdentityLinkParams> => ({
+export const createUserIdentityLinkTool = (context: ToolContext): PolicyAwareTool<typeof UserIdentityLinkParams> => ({
+  policy: { kind: 'fixed', grants: [{ type: 'role', value: 'owner' }] },
   name: 'user_identity_link',
   label: 'Link User Identity',
   description: 'Link a channel identity to a user. If the identity already belongs to another user, it will be re-linked to the target user.',
@@ -120,7 +122,8 @@ export const createUserIdentityLinkTool = (context: ToolContext): AgentTool<type
   },
 });
 
-export const createUserIdentityUnlinkTool = (context: ToolContext): AgentTool<typeof UserIdentityUnlinkParams> => ({
+export const createUserIdentityUnlinkTool = (context: ToolContext): PolicyAwareTool<typeof UserIdentityUnlinkParams> => ({
+  policy: { kind: 'fixed', grants: [{ type: 'role', value: 'owner' }] },
   name: 'user_identity_unlink',
   label: 'Unlink User Identity',
   description: 'Remove a channel identity link from its user.',
@@ -148,7 +151,8 @@ export const createUserIdentityUnlinkTool = (context: ToolContext): AgentTool<ty
   },
 });
 
-export const createUserRoleSetTool = (context: ToolContext): AgentTool<typeof UserRoleSetParams> => ({
+export const createUserRoleSetTool = (context: ToolContext): PolicyAwareTool<typeof UserRoleSetParams> => ({
+  policy: { kind: 'fixed', grants: [{ type: 'role', value: 'owner' }] },
   name: 'user_role_set',
   label: 'Set User Role',
   description: 'Change a user\'s role (owner, user, or guest).',
@@ -179,7 +183,8 @@ export const createUserRoleSetTool = (context: ToolContext): AgentTool<typeof Us
   },
 });
 
-export const createUserMergeTool = (context: ToolContext): AgentTool<typeof UserMergeParams> => ({
+export const createUserMergeTool = (context: ToolContext): PolicyAwareTool<typeof UserMergeParams> => ({
+  policy: { kind: 'fixed', grants: [{ type: 'role', value: 'owner' }] },
   name: 'user_merge',
   label: 'Merge Users',
   description: 'Merge one user into another. All identities from the source user are moved to the target. The source user is marked as merged and excluded from listings.',
@@ -246,7 +251,8 @@ type IdentityLinkConfirmArgs = Static<typeof IdentityLinkConfirmParams>;
 
 export const createIdentityLinkRequestTool = (
   context: ToolContext,
-): AgentTool<typeof IdentityLinkRequestParams> => ({
+): PolicyAwareTool<typeof IdentityLinkRequestParams> => ({
+  policy: { kind: 'fixed', grants: [{ type: 'any' }] },
   name: 'identity_link_request',
   label: 'Request Identity Link',
   description:
@@ -279,7 +285,8 @@ export const createIdentityLinkRequestTool = (
 
 export const createIdentityLinkConfirmTool = (
   context: ToolContext,
-): AgentTool<typeof IdentityLinkConfirmParams> => ({
+): PolicyAwareTool<typeof IdentityLinkConfirmParams> => ({
+  policy: { kind: 'fixed', grants: [{ type: 'any' }] },
   name: 'identity_link_confirm',
   label: 'Confirm Identity Link',
   description:

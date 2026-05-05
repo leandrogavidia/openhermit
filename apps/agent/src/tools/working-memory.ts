@@ -1,8 +1,6 @@
 import { Type, type Static } from '@mariozechner/pi-ai';
-import type { AgentTool } from '@mariozechner/pi-agent-core';
 
-import type { ToolContext } from './shared.js';
-import { asTextContent, ensureAutonomyAllows } from './shared.js';
+import { type PolicyAwareTool, type ToolContext, asTextContent, ensureAutonomyAllows } from './shared.js';
 
 const WorkingMemoryUpdateParams = Type.Object({
   content: Type.String({
@@ -17,7 +15,8 @@ type WorkingMemoryUpdateArgs = Static<typeof WorkingMemoryUpdateParams>;
 
 export const createWorkingMemoryUpdateTool = (
   context: ToolContext,
-): AgentTool<typeof WorkingMemoryUpdateParams> => ({
+): PolicyAwareTool<typeof WorkingMemoryUpdateParams> => ({
+  policy: { kind: 'configurable', defaultGrants: [{ type: 'role', value: 'owner' }, { type: 'role', value: 'user' }] },
   name: 'working_memory_update',
   label: 'Working Memory Update',
   description:

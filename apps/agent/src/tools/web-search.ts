@@ -1,8 +1,6 @@
 import { Type, type Static } from '@mariozechner/pi-ai';
-import type { AgentTool } from '@mariozechner/pi-agent-core';
 
-import type { ToolContext } from './shared.js';
-import { asTextContent } from './shared.js';
+import { type PolicyAwareTool, type ToolContext, asTextContent } from './shared.js';
 
 const WebSearchParams = Type.Object({
   query: Type.String({
@@ -31,7 +29,8 @@ type WebSearchArgs = Static<typeof WebSearchParams>;
 
 export const createWebSearchTool = ({
   webProvider,
-}: ToolContext): AgentTool<typeof WebSearchParams> => ({
+}: ToolContext): PolicyAwareTool<typeof WebSearchParams> => ({
+  policy: { kind: 'fixed', grants: [{ type: 'any' }] },
   name: 'web_search',
   label: 'Web Search',
   description:
