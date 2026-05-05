@@ -336,11 +336,7 @@ class HostFileBackend implements FileBackend {
     } else if (mode === 'append') {
       await appendFile(resolved, data);
     } else {
-      // overwrite — write to a temp then rename for atomicity.
-      const tmp = `${resolved}.tmp.${process.pid}.${Date.now()}`;
-      await writeFile(tmp, data);
-      const { rename } = await import('node:fs/promises');
-      await rename(tmp, resolved);
+      await writeFile(resolved, data);
     }
   }
 
