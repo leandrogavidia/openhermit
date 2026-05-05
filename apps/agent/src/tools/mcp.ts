@@ -34,7 +34,7 @@ export const createMcpEnableTool = (
   mcpServerStore: McpServerStore,
   agentId: string,
 ): PolicyAwareTool<typeof McpEnableParams> => ({
-  policy: { kind: 'configurable', defaultGrants: [{ type: 'role', value: 'owner' }, { type: 'role', value: 'user' }] },
+  policy: { kind: 'fixed', grants: [{ type: 'role', value: 'owner' }] },
   name: 'mcp_enable',
   label: 'MCP Enable',
   description: 'Enable and connect an MCP server for this agent. The server must already be registered in the system.',
@@ -56,7 +56,7 @@ export const createMcpDisableTool = (
   mcpServerStore: McpServerStore,
   agentId: string,
 ): PolicyAwareTool<typeof McpDisableParams> => ({
-  policy: { kind: 'configurable', defaultGrants: [{ type: 'role', value: 'owner' }, { type: 'role', value: 'user' }] },
+  policy: { kind: 'fixed', grants: [{ type: 'role', value: 'owner' }] },
   name: 'mcp_disable',
   label: 'MCP Disable',
   description: 'Disable and disconnect an MCP server for this agent.',
