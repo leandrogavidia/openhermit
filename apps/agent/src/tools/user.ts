@@ -311,19 +311,33 @@ export const createIdentityLinkConfirmTool = (
       );
     }
 
-    // If the redeeming caller already resolves to a different user, refuse.
-    // Silently merging users would lose data; the owner can use user_merge
-    // as a deliberate cleanup step.
-    if (context.currentUserId && context.currentUserId !== link.userId) {
-      throw new ValidationError(
-        `This channel identity already belongs to user ${context.currentUserId}, which is different from the requesting user ${link.userId}. Ask the owner to merge the two users with user_merge if that is intentional.`,
-      );
-    }
-
     // Verify requesting user still exists.
     const targetUser = await context.userStore.get(link.userId);
     if (!targetUser) {
       throw new ValidationError(`Requesting user ${link.userId} no longer exists.`);
+    }
+
+    // On public agents, resolveSessionUser auto-creates a guest for unknown
+    // channel identities.  So the confirming caller almost always arrives as
+    // a *different* user (the auto-created guest).  If the guest is ephemeral
+    // (single identity = this channel), we absorb it: re-link the identity
+    // and delete the empty shell.  If the caller already has multiple
+    // identities they're an established user — refuse and suggest user_merge.
+    let deletedGhostUserId: string | undefined;
+    if (context.currentUserId && context.currentUserId !== link.userId) {
+      const callerIdentities = await context.userStore.listIdentities(context.currentUserId);
+      const isEphemeral =
+        callerIdentities.length === 1 &&
+        callerIdentities[0]!.channel === context.currentChannel &&
+        callerIdentities[0]!.channelUserId === context.currentChannelUserId;
+
+      if (!isEphemeral) {
+        throw new ValidationError(
+          `This channel identity already belongs to user ${context.currentUserId}, which is different from the requesting user ${link.userId}. Ask the owner to merge the two users with user_merge if that is intentional.`,
+        );
+      }
+
+      deletedGhostUserId = context.currentUserId;
     }
 
     await context.userStore.linkIdentity({
@@ -332,6 +346,10 @@ export const createIdentityLinkConfirmTool = (
       channelUserId: context.currentChannelUserId,
       createdAt: new Date().toISOString(),
     });
+
+    if (deletedGhostUserId) {
+      await context.userStore.delete(deletedGhostUserId);
+    }
 
     return {
       content: asTextContent(
@@ -342,6 +360,7 @@ export const createIdentityLinkConfirmTool = (
         linkedChannel: context.currentChannel,
         linkedChannelUserId: context.currentChannelUserId,
         sourceChannel: link.channel,
+        ...(deletedGhostUserId ? { deletedGhostUserId } : {}),
       },
     };
   },
