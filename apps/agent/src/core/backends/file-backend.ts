@@ -3,6 +3,7 @@ import {
   mkdir,
   readdir,
   readFile,
+  realpath,
   stat as fsStat,
   unlink,
   writeFile,
@@ -80,13 +81,22 @@ export const requireAbsolutePath = (p: string): string => {
  * class translates them to host paths via `containerRoot` → `hostRoot`.
  */
 export class HostFileBackend implements FileBackend {
+  private realHostRoot: string | null = null;
+
   constructor(
     private readonly hostRoot: string,
     private readonly containerRoot: string,
   ) {}
 
+  private async getRealHostRoot(): Promise<string> {
+    if (this.realHostRoot === null) {
+      this.realHostRoot = await realpath(this.hostRoot);
+    }
+    return this.realHostRoot;
+  }
+
   /** Translate a container-side path to a host-side absolute path. */
-  private resolve(containerPath: string): string {
+  private translate(containerPath: string): string {
     const abs = requireAbsolutePath(containerPath);
     if (abs !== this.containerRoot && !abs.startsWith(`${this.containerRoot}/`)) {
       throw new ValidationError(
@@ -100,8 +110,44 @@ export class HostFileBackend implements FileBackend {
     return rel ? path.join(this.hostRoot, rel) : this.hostRoot;
   }
 
+  /**
+   * Translate + realpath boundary check. Resolves symlinks and verifies
+   * the real path still falls within hostRoot, preventing symlink escape.
+   * For write operations on new files, checks the parent directory instead.
+   */
+  private async resolve(containerPath: string, mustExist = true): Promise<string> {
+    const hostPath = this.translate(containerPath);
+    const root = await this.getRealHostRoot();
+    let real: string;
+    try {
+      real = await realpath(hostPath);
+    } catch (err) {
+      if ((err as NodeJS.ErrnoException).code === 'ENOENT' && !mustExist) {
+        const parent = path.dirname(hostPath);
+        try {
+          const realParent = await realpath(parent);
+          if (realParent !== root && !realParent.startsWith(`${root}/`)) {
+            throw new ValidationError(
+              `path resolves outside the sandbox root (symlink escape in parent directory).`,
+            );
+          }
+        } catch (parentErr) {
+          if (parentErr instanceof ValidationError) throw parentErr;
+        }
+        return hostPath;
+      }
+      throw err;
+    }
+    if (real !== root && !real.startsWith(`${root}/`)) {
+      throw new ValidationError(
+        `path resolves outside the sandbox root (symlink escape detected).`,
+      );
+    }
+    return real;
+  }
+
   async read(filePath: string): Promise<FileReadResult> {
-    const resolved = this.resolve(filePath);
+    const resolved = await this.resolve(filePath);
     try {
       const data = await readFile(resolved);
       return { data };
@@ -114,7 +160,7 @@ export class HostFileBackend implements FileBackend {
   }
 
   async write(filePath: string, data: Buffer, mode: FileWriteMode): Promise<void> {
-    const resolved = this.resolve(filePath);
+    const resolved = await this.resolve(filePath, false);
     await mkdir(path.dirname(resolved), { recursive: true });
     if (mode === 'create') {
       try {
@@ -133,7 +179,7 @@ export class HostFileBackend implements FileBackend {
   }
 
   async list(dirPath: string): Promise<DirEntry[]> {
-    const resolved = this.resolve(dirPath);
+    const resolved = await this.resolve(dirPath);
     let entries;
     try {
       entries = await readdir(resolved, { withFileTypes: true });
@@ -167,7 +213,13 @@ export class HostFileBackend implements FileBackend {
   }
 
   async stat(filePath: string): Promise<FileStat | null> {
-    const resolved = this.resolve(filePath);
+    let resolved: string;
+    try {
+      resolved = await this.resolve(filePath);
+    } catch (err) {
+      if ((err as NodeJS.ErrnoException).code === 'ENOENT') return null;
+      throw err;
+    }
     try {
       const s = await fsStat(resolved);
       return {
@@ -182,7 +234,7 @@ export class HostFileBackend implements FileBackend {
   }
 
   async delete(filePath: string): Promise<void> {
-    const resolved = this.resolve(filePath);
+    const resolved = await this.resolve(filePath);
     try {
       await unlink(resolved);
     } catch (err) {

@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
+import { mkdtemp, readFile, rm, symlink, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { test } from 'node:test';
@@ -204,5 +204,32 @@ test('docker file backend: container path translates to host workspaceDir', asyn
     await assert.rejects(() => backend.files.read('/etc/hostname'), ValidationError);
   } finally {
     await rm(tmp, { recursive: true, force: true });
+  }
+});
+
+test('host file backend: symlink escape is blocked', async () => {
+  const tmp = await mkdtemp(path.join(tmpdir(), 'oh-fs-escape-'));
+  const outside = await mkdtemp(path.join(tmpdir(), 'oh-fs-outside-'));
+  try {
+    process.env['HOME'] = tmp;
+    await writeFile(path.join(outside, 'secret.txt'), 'sensitive data');
+    await symlink(outside, path.join(tmp, 'escape'));
+
+    const backend = createExecBackend({ type: 'host' }, fakeContext);
+    await assert.rejects(
+      () => backend.files.read(path.join(tmp, 'escape', 'secret.txt')),
+      ValidationError,
+    );
+    await assert.rejects(
+      () => backend.files.write(path.join(tmp, 'escape', 'pwned.txt'), Buffer.from('x'), 'overwrite'),
+      ValidationError,
+    );
+    await assert.rejects(
+      () => backend.files.list(path.join(tmp, 'escape')),
+      ValidationError,
+    );
+  } finally {
+    await rm(tmp, { recursive: true, force: true });
+    await rm(outside, { recursive: true, force: true });
   }
 });
