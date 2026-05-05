@@ -1,3 +1,6 @@
+import { readFileSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
+import path from 'node:path';
 import { Command } from 'commander';
 import { loadEnv } from '@openhermit/shared';
 
@@ -17,6 +20,9 @@ import { registerMcpCommand } from './commands/mcp.js';
 import { registerStatsCommand } from './commands/stats.js';
 import { registerInstructionsCommand } from './commands/instructions.js';
 
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+const pkg = JSON.parse(readFileSync(path.resolve(__dirname, '../package.json'), 'utf8'));
+
 await loadEnv();
 
 // ── CLI ────────────────────────────────────────────────────────────────
@@ -26,7 +32,7 @@ const program = new Command();
 program
   .name('hermit')
   .description('OpenHermit — multi-agent platform CLI')
-  .version('0.4.6');
+  .version(pkg.version);
 
 registerSetupCommand(program);
 registerChatCommand(program);
