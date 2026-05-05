@@ -21,6 +21,7 @@ const memoryVisible = (entry: MemoryEntry, principal: Principal | undefined): bo
   const grants = entry.grants;
   if (!Array.isArray(grants) || grants.length === 0) return true;
   if (!principal) return false;
+  if (principal.role === 'owner') return true;
   return canAccess(principal, grants as Grant[]);
 };
 
@@ -420,7 +421,14 @@ You have persistent memory across sessions. The most valuable memory is one that
 
 **Never** use bare \`user/…\` without a userId — this is a multi-user system, so \`user/name\` is ambiguous. Always use \`user/{userId}/name\` with the specific user's ID from the Current User section.
 
-When recalling user-specific information, search with the user's ID prefix. This keeps per-user data isolated and retrievable.`;
+When recalling user-specific information, search with the user's ID prefix. This keeps per-user data isolated and retrievable.
+
+**Grants (visibility):**
+When creating a memory with \`memory_add\`, set the \`grants\` parameter to control who can read it:
+- \`user/{userId}/…\` memories → set \`grants: [{type:"user", value:"{userId}"}]\` so only that user (and owner) can see them.
+- \`project/…\` and \`agent/…\` memories → omit grants or pass \`[]\` (open to everyone).
+- Owner-sensitive information → set \`grants: [{type:"role", value:"owner"}]\`.
+Owner always has visibility into all memories regardless of grants.`;
 
 export const createMemoryToolset = (context: ToolContext): Toolset => ({
   id: 'memory',
