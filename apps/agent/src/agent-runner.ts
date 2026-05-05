@@ -1485,7 +1485,6 @@ export class AgentRunner implements SessionRuntime {
     // - undefined (no user resolved): web only (no sessions — can't identify caller)
     const role = input.userRole;
     const isOwnerOrUnresolved = role === 'owner';
-    const isGuestRole = !role || role === 'guest';
 
     // When tools are provided directly (introspection, compaction), skip toolset creation
     let toolsets: Toolset[];
@@ -1506,27 +1505,25 @@ export class AgentRunner implements SessionRuntime {
     } else {
       toolsets = createBuiltInToolsets({
         security: this.options.security,
-        ...(!isGuestRole ? { memoryProvider: this.store.memories } : {}),
+        memoryProvider: this.store.memories,
         messageStore: this.store.messages,
         sessionId: input.contextSessionId,
         webProvider,
-        ...(isOwnerOrUnresolved ? { instructionStore: this.store.instructions } : {}),
+        instructionStore: this.store.instructions,
         ...(input.userId ? { userStore: this.store.users } : {}),
-        ...(isOwnerOrUnresolved || input.userId ? { sessionStore: this.store.sessions } : {}),
+        sessionStore: this.store.sessions,
         ...(input.userId ? { currentUserId: input.userId } : {}),
         ...(input.userRole ? { currentUserRole: input.userRole } : {}),
         ...(input.channel ? { currentChannel: input.channel } : {}),
         ...(input.channelUserId ? { currentChannelUserId: input.channelUserId } : {}),
         storeScope: this.scope,
-        ...(!isGuestRole ? {
-          agentId: this.scope.agentId,
-          execBackendManager: execManager,
-          onExec: () => this.resetWorkspaceIdleTimer(input.config.exec?.lifecycle),
-        } : {}),
+        agentId: this.scope.agentId,
+        execBackendManager: execManager,
+        onExec: () => this.resetWorkspaceIdleTimer(input.config.exec?.lifecycle),
         ...(this.channelOutbound.size > 0 ? { channelOutbound: this.channelOutbound } : {}),
-        ...(isOwnerOrUnresolved ? { scheduleStore: this.store.schedules } : {}),
-        ...(isOwnerOrUnresolved && this.options.policyStore ? { policyStore: this.options.policyStore } : {}),
-        ...(isOwnerOrUnresolved ? { onScheduleChange: () => this.scheduler?.reload() } : {}),
+        scheduleStore: this.store.schedules,
+        ...(this.options.policyStore ? { policyStore: this.options.policyStore } : {}),
+        ...(this.scheduler ? { onScheduleChange: () => this.scheduler?.reload() } : {}),
         ...(input.approvalCallback ? { approvalCallback: input.approvalCallback } : {}),
         ...(input.approvedCache ? { approvedCache: input.approvedCache } : {}),
         ...(input.onToolCall ? { onToolCall: input.onToolCall } : {}),

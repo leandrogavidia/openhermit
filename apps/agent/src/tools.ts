@@ -56,7 +56,7 @@ export const createBuiltInToolsets = (
     toolsets.push(createExecToolset(context));
     toolsets.push(createFileToolset(context));
   }
-  if (context.userStore && context.currentUserRole === 'owner') {
+  if (context.userStore) {
     toolsets.push(createUserToolset(context));
   }
   if (context.userStore && context.currentUserId && context.currentChannel && context.currentChannelUserId) {
