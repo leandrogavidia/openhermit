@@ -67,7 +67,7 @@ Stored as `jsonb` so the array of objects round-trips naturally. There is no row
 | `agent_skills` | `grants: jsonb` | Per-assignment, not on the global `skills` registry. Default: `[{type:'any'}]`. |
 | `agent_mcp_servers` | `grants: jsonb` | Per-assignment, not on the global `mcp_servers` registry. Default: `[{type:'any'}]`. |
 | `agent_memories` | `grants: jsonb` | Controls when a memory is retrieved into context. See "Memory grants" below. |
-| `agent_policies` (new) | `(agent_id, resource_type, mode, resource_key, grants: jsonb)` | Unified table for all "pure policy" resources (tools, files, future types). `mode` is `'read'` / `'write'` for resources where that distinction is meaningful, `NULL` otherwise. |
+| `agent_policies` (new) | `(agent_id, sandbox_id, resource_type, mode, resource_key, grants: jsonb)` | Unified table for all "pure policy" resources (tools, files, future types). `mode` is `'read'` / `'write'` where meaningful, `NULL` otherwise. `sandbox_id` is set for sandbox-scoped resources (files); `NULL` means "any sandbox of this agent" or "not sandbox-scoped". |
 
 Sessions don't carry a configurable visibility field. The rule is fixed and lives in `canAccessSession`:
 
@@ -79,37 +79,42 @@ Sessions don't carry a configurable visibility field. The rule is fixed and live
 ### `agent_policies` example
 
 ```
-(agent='foo', type='tool', mode=NULL,    key='exec',
+(agent='foo', sandbox=NULL,        type='tool', mode=NULL,    key='exec',
   grants=[{type:'role', value:'owner'}])
 
-(agent='foo', type='tool', mode=NULL,    key='schedule_create',
+(agent='foo', sandbox=NULL,        type='tool', mode=NULL,    key='schedule_create',
   grants=[{type:'role', value:'owner'}, {type:'user', value:'user-abc'}])
 
-(agent='foo', type='file', mode='read',  key='/workspace/public/',
+(agent='foo', sandbox=NULL,        type='file', mode='read',  key='/workspace/public/',
   grants=[{type:'any'}])
 
-(agent='foo', type='file', mode='write', key='/workspace/public/',
+(agent='foo', sandbox=NULL,        type='file', mode='write', key='/workspace/public/',
   grants=[{type:'role', value:'owner'}, {type:'role', value:'user'}])
 
-(agent='foo', type='file', mode='read',  key='/workspace/',
+(agent='foo', sandbox='throwaway', type='file', mode='write', key='/workspace/',
+  grants=[{type:'any'}])
+
+(agent='foo', sandbox=NULL,        type='file', mode='read',  key='/workspace/',
   grants=[{type:'role', value:'owner'}])
 
-(agent='foo', type='file', mode='write', key='/workspace/',
+(agent='foo', sandbox=NULL,        type='file', mode='write', key='/workspace/',
   grants=[{type:'role', value:'owner'}])
 ```
 
 Match semantics for `resource_key` are per-type and live in `canAccess`:
 
-- `tool` — exact match. Mode is ignored (NULL).
-- `file` — longest-prefix match, scoped to the requested mode.
+- `tool` — exact match. `sandbox_id` and `mode` ignored (always NULL for tool rows).
+- `file` — longest-prefix match, scoped to the requested mode and sandbox. Sandbox-specific rows override `sandbox_id IS NULL` rows for the same key.
 
 If no rule matches, deny. Adding a new resource type means adding one branch in `canAccess`, no schema migration.
 
-When a new resource type is introduced (e.g. `network`, `db_query`), use `mode` if read and write differ in a way operators legitimately want to gate separately. Otherwise leave it NULL.
+When a new resource type is introduced (e.g. `network`, `db_query`), use `mode` if read and write differ in a way operators legitimately want to gate separately, and use `sandbox_id` if the resource is sandbox-bound. Otherwise leave them NULL.
 
-Index: `(agent_id, resource_type, mode, resource_key)`.
+Index: `(agent_id, sandbox_id, resource_type, mode, resource_key)`.
 
-Admin UI should expose a "read + write" shortcut that emits two rows with the same grants, since most file rules will share permissions across both modes.
+Admin UI should expose a "read + write" shortcut that emits two rows with the same grants, since most file rules share permissions across both modes.
+
+See [fs-tools.md](./fs-tools.md) for how file paths and the `sandbox_id` column are used by the file tools layer.
 
 ### Memory grants
 
