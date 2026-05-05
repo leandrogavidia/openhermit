@@ -49,6 +49,18 @@ export interface SandboxRecord {
   lastSeenAt: string | null;
 }
 
+export interface PolicyRecord {
+  id: string;
+  agentId: string;
+  sandboxAlias: string | null;
+  resourceType: string;
+  mode: string | null;
+  resourceKey: string;
+  grants: unknown[];
+  createdAt: string;
+  updatedAt: string;
+}
+
 export interface SandboxCreateInput {
   id?: string;
   agentId: string;

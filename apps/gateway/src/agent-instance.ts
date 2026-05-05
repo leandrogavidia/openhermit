@@ -8,7 +8,7 @@ import {
   type LangfuseClientLike,
 } from '@openhermit/agent/langfuse';
 import { startChannels, startSingleChannel, stopChannels, type ChannelStatus, type WebhookRequest, type WebhookResponse } from '@openhermit/agent/channels';
-import type { AgentConfigStore, AgentStore, McpServerStore, SandboxStore, SecretStore, SkillStore } from '@openhermit/store';
+import type { AgentConfigStore, AgentStore, McpServerStore, PolicyStore, SandboxStore, SecretStore, SkillStore } from '@openhermit/store';
 
 import type { ChannelRegistry } from './auth.js';
 
@@ -46,6 +46,8 @@ export class AgentInstanceManager {
   private agentStore: AgentStore | undefined;
   /** DB-backed sandbox store (one row per agent sandbox). */
   private sandboxStore: SandboxStore | undefined;
+  /** DB-backed policy store (tool/resource access grants). */
+  private policyStore: PolicyStore | undefined;
   /** DB-backed channel store (builtin + external rows, encrypted tokens). */
   private channelStore: import('@openhermit/store').DbAgentChannelStore | undefined;
 
@@ -87,6 +89,10 @@ export class AgentInstanceManager {
 
   getSandboxStore(): SandboxStore | undefined {
     return this.sandboxStore;
+  }
+
+  setPolicyStore(store: PolicyStore): void {
+    this.policyStore = store;
   }
 
   setChannelStore(store: import('@openhermit/store').DbAgentChannelStore): void {
@@ -159,6 +165,7 @@ export class AgentInstanceManager {
       ...(this.skillStore ? { skillStore: this.skillStore } : {}),
       ...(this.mcpServerStore ? { mcpServerStore: this.mcpServerStore } : {}),
       ...(this.sandboxStore ? { sandboxStore: this.sandboxStore } : {}),
+      ...(this.policyStore ? { policyStore: this.policyStore } : {}),
     });
 
     this.runners.set(agentId, runner);

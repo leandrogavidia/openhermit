@@ -12,6 +12,7 @@ import type {
   MemorySearchOptions,
   MemoryUpdateInput,
   PersistedSessionIndexEntry,
+  PolicyRecord,
   SandboxCreateInput,
   SandboxRecord,
   SandboxStatus,
@@ -229,6 +230,23 @@ export interface SandboxStore {
   delete(id: string): Promise<void>;
   /** Find the agent (if any) that already has a sandbox of the given type. */
   findAgentByType(type: string, excludeAgentId?: string): Promise<string | null>;
+}
+
+export interface PolicyStore {
+  list(agentId: string, resourceType?: string): Promise<PolicyRecord[]>;
+  get(
+    agentId: string,
+    resourceType: string,
+    resourceKey: string,
+    opts?: { sandboxAlias?: string; mode?: string },
+  ): Promise<PolicyRecord | undefined>;
+  upsert(record: Omit<PolicyRecord, 'id' | 'createdAt' | 'updatedAt'>): Promise<PolicyRecord>;
+  delete(
+    agentId: string,
+    resourceType: string,
+    resourceKey: string,
+    opts?: { sandboxAlias?: string; mode?: string },
+  ): Promise<void>;
 }
 
 export interface InternalStateStore {

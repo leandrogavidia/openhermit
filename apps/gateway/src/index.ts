@@ -13,6 +13,7 @@ import {
   DbAgentConfigStore,
   DbMcpServerStore,
   DbSandboxStore,
+  DbPolicyStore,
   DbScheduleStore,
   DbSkillStore,
   DbUserStore,
@@ -120,6 +121,7 @@ export const main = async (): Promise<void> => {
   let agentChannelStore: DbAgentChannelStore | undefined;
   let instructionStore: DbInstructionStore | undefined;
   let sandboxStore: DbSandboxStore | undefined;
+  let policyStore: DbPolicyStore | undefined;
   if (process.env.DATABASE_URL) {
     try {
       await runMigrations();
@@ -132,6 +134,7 @@ export const main = async (): Promise<void> => {
       configStore = await DbAgentConfigStore.open();
       instructionStore = await DbInstructionStore.open();
       sandboxStore = await DbSandboxStore.open();
+      policyStore = await DbPolicyStore.open();
       if (process.env.OPENHERMIT_SECRETS_KEY) {
         agentChannelStore = await DbAgentChannelStore.open();
       }
@@ -262,6 +265,10 @@ export const main = async (): Promise<void> => {
 
   if (agentStore) {
     instances.setAgentStore(agentStore);
+  }
+
+  if (policyStore) {
+    instances.setPolicyStore(policyStore);
   }
 
   if (sandboxStore) {

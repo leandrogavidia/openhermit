@@ -1,6 +1,6 @@
 import type { Agent, StreamFn } from '@mariozechner/pi-agent-core';
 import type { SessionStatus } from '@openhermit/protocol';
-import type { InternalStateStore, McpServerStore, SandboxStore, SkillStore, UserRole } from '@openhermit/store';
+import type { InternalStateStore, McpServerStore, PolicyStore, SandboxStore, SkillStore, UserRole } from '@openhermit/store';
 
 import type { LangfuseClientLike, LangfuseTurnContext } from '../langfuse.js';
 import type { SessionDescriptor } from '../runtime.js';
@@ -51,4 +51,5 @@ export interface AgentRunnerOptions {
    * the legacy `config.exec.backends[]` path until backfill completes.
    */
   sandboxStore?: SandboxStore;
+  policyStore?: PolicyStore;
 }

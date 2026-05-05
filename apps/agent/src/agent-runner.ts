@@ -17,7 +17,11 @@ import {
   DEFAULT_INTROSPECTION_CONFIG,
   DockerContainerManager,
   ExecBackendManager,
+  buildPrincipal,
+  canAccess,
+  resolveToolGrants,
   type AgentConfig,
+  type PolicyRow,
 } from './core/index.js';
 import { ApprovalGate } from './agent-runner/approval-gate.js';
 import { buildSystemPrompt } from './agent-runner/prompt.js';
@@ -1561,15 +1565,13 @@ export class AgentRunner implements SessionRuntime {
       tools = toolsFromToolsets(toolsets);
     }
 
-    const GUEST_BLOCKED_TOOLS = new Set([
-      'exec',
-      'file_write', 'file_edit', 'file_delete',
-      'schedule_create', 'schedule_update', 'schedule_delete', 'schedule_trigger',
-      'mcp_enable', 'mcp_disable',
-    ]);
-    const filteredTools = isGuestRole
-      ? tools.filter((t: any) => !GUEST_BLOCKED_TOOLS.has(t.name))
-      : tools;
+    const principal = buildPrincipal(this.scope.agentId, input.userId, input.userRole);
+    const policyRows: PolicyRow[] | undefined = this.options.policyStore
+      ? await this.options.policyStore.list(this.scope.agentId, 'tool')
+      : undefined;
+    const filteredTools = tools.filter((t: any) =>
+      canAccess(principal, resolveToolGrants(policyRows, t.name)),
+    );
 
     const currentUser = input.userId && input.userRole
       ? {

@@ -12,6 +12,7 @@ export type {
   UserStore,
   InternalStateStore,
   SandboxStore,
+  PolicyStore,
 } from './interfaces.js';
 
 export type {
@@ -45,6 +46,7 @@ export type {
   SandboxCreateInput,
   SandboxStatus,
   SandboxType,
+  PolicyRecord,
 } from './types.js';
 
 export { STANDALONE_AGENT_ID, standaloneScope } from './types.js';
@@ -65,6 +67,7 @@ export {
   DbSecretStore,
   DbAgentChannelStore,
   DbSandboxStore,
+  DbPolicyStore,
   generateSecretsKey,
   runMigrations,
 } from './impl/index.js';
