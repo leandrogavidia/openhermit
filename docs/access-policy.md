@@ -85,6 +85,15 @@ Sessions don't carry a configurable visibility field. The rule is fixed and live
 (agent='foo', sandbox=NULL,        type='tool', mode=NULL,    key='schedule_create',
   grants=[{type:'role', value:'owner'}, {type:'user', value:'user-abc'}])
 
+(agent='foo', sandbox=NULL,        type='exec', mode=NULL,    key='*',
+  grants=[{type:'role', value:'owner'}])
+
+(agent='foo', sandbox='primary',   type='exec', mode=NULL,    key='git status@/workspace/repo',
+  grants=[{type:'role', value:'user'}])
+
+(agent='foo', sandbox='primary',   type='exec', mode=NULL,    key='pnpm test@/workspace/repo',
+  grants=[{type:'user', value:'user-abc'}])
+
 (agent='foo', sandbox=NULL,        type='file', mode='read',  key='/workspace/public/',
   grants=[{type:'any'}])
 
@@ -105,6 +114,7 @@ Match semantics for `resource_key` are per-type and live in `canAccess`:
 
 - `tool` — exact match. `sandbox_id` and `mode` ignored (always NULL for tool rows).
 - `file` — longest-prefix match, scoped to the requested mode and sandbox. Sandbox-specific rows override `sandbox_id IS NULL` rows for the same key.
+- `exec` — see "Exec command whitelist" below.
 
 If no rule matches, deny. Adding a new resource type means adding one branch in `canAccess`, no schema migration.
 
@@ -115,6 +125,102 @@ Index: `(agent_id, sandbox_id, resource_type, mode, resource_key)`.
 Admin UI should expose a "read + write" shortcut that emits two rows with the same grants, since most file rules share permissions across both modes.
 
 See [fs-tools.md](./fs-tools.md) for how file paths and the `sandbox_id` column are used by the file tools layer.
+
+### Exec command whitelist
+
+`exec` is the one tool whose argument carries security-relevant content (the shell command itself). A binary "this principal may call exec" grant either gives them all of shell or none of it. To split the difference, `exec` has its own resource type with **exact full-command matching**.
+
+Two row shapes:
+
+- `key='*'` — wildcard. Principals matching the grants may run **any** command.
+- `key='<normalized command>@<cwd>'` — exact match. Principals matching the grants may run **this exact command in this exact cwd**, nothing else.
+
+Why exact and not prefix:
+
+```
+approved: 'git status' @ /workspace/repo
+attempt:  'git status; cat /etc/passwd'  → different string → deny
+attempt:  'git status --quiet'           → different string → deny
+attempt:  'git  status' (double space)   → after normalization same → allow
+```
+
+Compound commands, flag injection, and cwd traversal are all blocked because the entire string must equal an approved entry. Owner who wants `--quiet` adds another row.
+
+Normalization before comparison:
+
+- Trim leading/trailing whitespace.
+- Collapse internal runs of whitespace to a single space.
+- Reject newlines (a multi-line "command" is not a single shell invocation).
+- No variable expansion, no shell parsing.
+
+`canAccess` for an exec attempt:
+
+```ts
+canAccess(principal, {type:'exec', command, cwd, sandbox}):
+  rows = policies for (agent, sandbox or NULL, type='exec')
+  if any row with key='*' matches principal in grants → allow
+  if any row with key=`${normalize(command)}@${cwd}` matches principal in grants → allow
+  deny
+```
+
+Owners typically have one `key='*'` row granting them everything; non-owner roles get specific commands enumerated row-by-row. Exec stays a `string` argument; no argv migration needed.
+
+This solves the practical case of "let user run a few specific commands" without opening shell to them. For parameterised commands (e.g. let user run any `npm` subcommand), a custom tool wrapping that command is still the better fit — see fs-tools.md "exec coexistence".
+
+### Requesting access (`policy_grant`)
+
+When a tool call is denied because the calling principal lacks a grant, the agent shouldn't dead-end. Owners can grant access on demand via a built-in tool, driven by user requests forwarded out-of-band.
+
+The flow is stateless — there is no DB table of pending requests. The agent's denial message embeds a complete, human-readable resource descriptor; the user forwards that text to the owner; the owner asks the agent to grant; the agent calls `policy_grant`.
+
+```
+policy_grant(resource: ResourceDescriptor, grant: Grant)
+  policy: { kind: 'fixed', grants: [{type:'role', value:'owner'}] }
+```
+
+- `resource` — full structured descriptor: `{type, sandbox_id, mode, key}`. Same shape as the `Resource` discriminated union used elsewhere.
+- `grant` — a single `Grant` (`{type:'user', value:...}`, `{type:'role', value:...}`).
+- Behaviour: upserts the corresponding row in `agent_policies`. If a row already exists for that `(agent, sandbox, type, mode, key)`, the new grant is merged into its `grants` array; otherwise a row is created.
+
+Symmetric: `policy_revoke(resource, grant)` removes a grant.
+
+Companion read-side tool:
+
+```
+policy_list(principal?: Principal)
+  policy: { kind: 'fixed', grants: [{type:'any'}] }
+```
+
+- Omitted `principal`, or `principal` equal to the caller — returns the caller's own effective permissions across all resource types (skills, MCP, files, exec, tools, memory summary).
+- `principal` referring to a different user — requires caller to be `owner`; otherwise denied inside the handler.
+
+Same pattern as `session_list`: anyone can introspect themselves; only owner can introspect others. Output groups by resource type so users can ask "what can I do here" and get a useful answer without leaking owner-only resources they couldn't use anyway.
+
+#### Example flow
+
+User on web chat:
+> User: read `/workspace/notes/architecture.md` for me
+> Agent: I don't have permission to read that file under your role. Forward this to your owner to request access:
+> ```
+> Grant request from user-xyz:
+>   read file /workspace/notes/architecture.md (sandbox: primary)
+> ```
+
+User pastes that message to owner via Slack DM.
+
+Owner in their own conversation with the agent:
+> Owner: grant user-xyz read access to /workspace/notes/architecture.md on the primary sandbox
+> Agent: [policy_grant(resource={type:'file', sandbox_id:'primary', mode:'read', key:'/workspace/notes/architecture.md'}, grant={type:'user', value:'user-xyz'})] Done.
+
+User retries the original request and it now succeeds.
+
+#### Rationale for stateless design
+
+A `pending_policy_requests` table was considered and rejected. Owners would otherwise see opaque request IDs and have to look them up; with a self-describing descriptor, the owner sees exactly what they're approving in plain text. Conversation history serves as the audit trail; if more structured audit is needed later, `agent_policies` rows can carry `granted_by`, `granted_at` columns without changing the grant flow itself.
+
+A user could tamper with the descriptor before forwarding it, but that is not a privilege escalation — the owner approves what they read, so any tampering changes only the user's own request.
+
+The agent's denial output must include the full structured descriptor (path, mode, sandbox), not a vague paraphrase. This is enforced via the `policy_grant` tool description, which instructs the agent on the required format.
 
 ### Memory grants
 
@@ -204,6 +310,8 @@ Not every tool's policy belongs in `agent_policies`. Some tools have a security 
 - `identity_link_request` / `identity_link_confirm` — always `[{type:'any'}]`; safety comes from the token + channel-proof flow inside the handler.
 - `memory_save`, `memory_recall` — the agent must always be able to remember and recall, otherwise it loses basic faculties.
 - `memory_update_grants` — owner-only by design; see Memory grants section.
+- `policy_grant`, `policy_revoke` — owner-only; see Requesting access.
+- `policy_list` — open to all, but internal handler restricts cross-principal queries to owner; see Requesting access.
 
 **Configurable tools.** A default grant is declared in the tool definition; `agent_policies` rows on a given agent override it. Admin UI exposes them. Examples: `exec`, `schedule_*`, `mcp_enable`, `mcp_disable`, file operations, custom user-authored tools.
 
