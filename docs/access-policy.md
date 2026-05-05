@@ -343,6 +343,57 @@ Three levels, unchanged from today:
 - `user` — authenticated, standard interaction.
 - `guest` — anonymous or low-trust, restricted by default.
 
+## Future: circles
+
+Per-user grants are precise but tedious once an owner has more than a handful of people to authorise individually. The `Grant` type is designed to extend with a `circle` variant for owner-defined sets of users:
+
+```ts
+type Grant =
+  | { type: 'any' }
+  | { type: 'role';   value: 'owner'|'user'|'guest' }
+  | { type: 'user';   value: string }
+  | { type: 'circle'; value: string };   // 'family' | 'colleagues' | 'beta-testers' | ...
+```
+
+### Why circles instead of more roles
+
+Roles and circles answer different questions:
+
+- **Roles** are a fixed trust hierarchy (owner > user > guest) used by system-level fallbacks (session visibility, default fixed-rule tool policies). Adding a role changes systemic trust assumptions and should stay rare.
+- **Circles** are flat, owner-defined labels with no internal ordering. Their only job is to organise grants. A user may belong to multiple circles; matching is OR.
+
+A user not in any circle is unaffected; circle grants are purely additive.
+
+### Schema
+
+```
+agent_circles            (agent_id, name, description, created_at)
+                         PK (agent_id, name)
+
+user_agent_circles       (agent_id, user_id, circle_name, added_at)
+                         PK (agent_id, user_id, circle_name)
+```
+
+Membership is loaded into the principal context at auth time so `canAccess` doesn't hit the DB per call.
+
+### Tools
+
+Owner-only fixed-rule built-ins, conversational like `policy_grant`:
+
+```
+circle_create(name, description?)
+circle_delete(name)
+circle_add(circle, userId)
+circle_remove(circle, userId)
+circle_list(name?)            // self / cross-circle gated like policy_list
+```
+
+`policy_grant` accepts `{type:'circle', value:'family'}` directly; no separate API.
+
+### When to build
+
+Slated for after the per-user grant mechanism is in production and shows real demand for batched authorization. Not a P1 concern — a single `circle` variant slots in without disturbing existing rows.
+
 ## Phased rollout
 
 - **P0 — close existing gaps.** Stand up `agent_policies` and the central `canAccess`; migrate `GUEST_BLOCKED_TOOLS` into `tool` rows. Pure refactor; no new user-visible features.
