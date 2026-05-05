@@ -613,6 +613,37 @@ export const putAgentConfig = (config: AgentConfig) => apiFetch<{ ok: boolean }>
 export interface ProviderCatalogEntry { provider: string; models: { id: string; reasoning: boolean }[] }
 export const fetchProviderCatalog = () => apiFetchGlobal<ProviderCatalogEntry[]>('/api/providers');
 
+// Policies
+export interface PolicyInfo {
+  id: string;
+  agentId: string;
+  sandboxAlias: string | null;
+  resourceType: string;
+  mode: string | null;
+  resourceKey: string;
+  grants: Array<{ type: 'any' | 'role' | 'user'; value?: string }>;
+  createdAt: string;
+  updatedAt: string;
+}
+export const fetchPolicies = (resourceType?: string) => {
+  const params = resourceType ? `?resourceType=${encodeURIComponent(resourceType)}` : '';
+  return apiFetch<PolicyInfo[]>(`/policies${params}`);
+};
+export const upsertPolicy = (data: {
+  resourceType: string;
+  resourceKey: string;
+  grants: Array<{ type: string; value?: string }>;
+  sandboxAlias?: string | null;
+  mode?: string | null;
+}) => apiFetch<PolicyInfo>('/policies', { method: 'POST', body: data });
+export const deletePolicy = (resourceType: string, resourceKey: string, opts?: { sandboxAlias?: string; mode?: string }) => {
+  const params = new URLSearchParams();
+  if (opts?.sandboxAlias) params.set('sandboxAlias', opts.sandboxAlias);
+  if (opts?.mode) params.set('mode', opts.mode);
+  const qs = params.size > 0 ? `?${params.toString()}` : '';
+  return apiFetch<{ ok: boolean }>(`/policies/${encodeURIComponent(resourceType)}/${encodeURIComponent(resourceKey)}${qs}`, { method: 'DELETE' });
+};
+
 // Secrets — server returns values masked (e.g. "abcd********wxyz").
 // Use setAgentSecret / deleteAgentSecret for per-key edits.
 export const fetchAgentSecrets = () => apiFetch<Record<string, string>>('/secrets');
