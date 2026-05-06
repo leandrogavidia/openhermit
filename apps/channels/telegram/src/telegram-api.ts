@@ -39,9 +39,17 @@ export interface TelegramMessage {
   reply_to_message?: TelegramMessage;
 }
 
+export interface TelegramCallbackQuery {
+  id: string;
+  from: TelegramUser;
+  message?: TelegramMessage;
+  data?: string;
+}
+
 export interface TelegramUpdate {
   update_id: number;
   message?: TelegramMessage;
+  callback_query?: TelegramCallbackQuery;
 }
 
 interface TelegramApiResponse<T> {
@@ -95,19 +103,23 @@ export class TelegramApi {
     return this.call<TelegramUpdate[]>('getUpdates', {
       ...(offset !== undefined ? { offset } : {}),
       timeout,
-      allowed_updates: ['message'],
+      allowed_updates: ['message', 'callback_query'],
     }, signal);
   }
 
   async sendMessage(
     chatId: number,
     text: string,
-    options?: { parseMode?: 'Markdown' | 'MarkdownV2' | 'HTML' },
+    options?: {
+      parseMode?: 'Markdown' | 'MarkdownV2' | 'HTML';
+      replyMarkup?: unknown;
+    },
   ): Promise<TelegramMessage> {
     return this.call<TelegramMessage>('sendMessage', {
       chat_id: chatId,
       text,
       ...(options?.parseMode ? { parse_mode: options.parseMode } : {}),
+      ...(options?.replyMarkup ? { reply_markup: options.replyMarkup } : {}),
     });
   }
 
@@ -142,10 +154,33 @@ export class TelegramApi {
     });
   }
 
+  async answerCallbackQuery(
+    callbackQueryId: string,
+    options?: { text?: string; showAlert?: boolean },
+  ): Promise<boolean> {
+    return this.call<boolean>('answerCallbackQuery', {
+      callback_query_id: callbackQueryId,
+      ...(options?.text ? { text: options.text } : {}),
+      ...(options?.showAlert ? { show_alert: options.showAlert } : {}),
+    });
+  }
+
+  async editMessageReplyMarkup(
+    chatId: number,
+    messageId: number,
+    replyMarkup?: unknown,
+  ): Promise<TelegramMessage | true> {
+    return this.call<TelegramMessage | true>('editMessageReplyMarkup', {
+      chat_id: chatId,
+      message_id: messageId,
+      ...(replyMarkup ? { reply_markup: replyMarkup } : {}),
+    });
+  }
+
   async setWebhook(url: string, secretToken?: string): Promise<boolean> {
     return this.call<boolean>('setWebhook', {
       url,
-      allowed_updates: ['message'],
+      allowed_updates: ['message', 'callback_query'],
       ...(secretToken ? { secret_token: secretToken } : {}),
     });
   }

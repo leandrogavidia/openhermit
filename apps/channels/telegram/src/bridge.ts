@@ -8,7 +8,7 @@ import { randomUUID } from 'node:crypto';
 import { AgentLocalClient, parseSseFrames } from '@openhermit/sdk';
 import type { ChannelOutbound, ChannelOutboundResult } from '@openhermit/protocol';
 
-import type { TelegramApi, TelegramMessage, TelegramUser } from './telegram-api.js';
+import type { TelegramApi, TelegramCallbackQuery, TelegramMessage, TelegramUser } from './telegram-api.js';
 import {
   formatAgentResponse,
   markdownToTelegramHtml,
@@ -36,6 +36,9 @@ export class TelegramBridge implements ChannelOutbound {
   private readonly chatSessions = new Map<number, string>();
   /** Bot user info, lazily fetched via getMe(). */
   private botInfo: TelegramUser | undefined;
+  /** Maps short callback IDs to (sessionId, toolCallId) for inline approval buttons. */
+  private readonly pendingApprovals = new Map<string, { sessionId: string; toolCallId: string }>();
+  private approvalSeq = 0;
 
   constructor(
     private readonly telegram: TelegramApi,
@@ -400,6 +403,13 @@ export class TelegramBridge implements ChannelOutbound {
             continue;
           }
 
+          if (frame.event === 'tool_approval_required') {
+            const toolName = String(payload.toolName ?? 'unknown');
+            const toolCallId = String(payload.toolCallId ?? '');
+            void this.sendApprovalPrompt(chatId, sessionId, toolName, toolCallId).catch(() => undefined);
+            continue;
+          }
+
           if (frame.event === 'agent_end') {
             sawAgentEnd = true;
             continue;
@@ -445,5 +455,81 @@ export class TelegramBridge implements ChannelOutbound {
       text: sentMessageId ? undefined : responseText, // If we already streamed, don't send again.
       error,
     };
+  }
+
+  private async sendApprovalPrompt(
+    chatId: number,
+    sessionId: string,
+    toolName: string,
+    toolCallId: string,
+  ): Promise<void> {
+    const id = String(++this.approvalSeq);
+    this.pendingApprovals.set(id, { sessionId, toolCallId });
+
+    await this.telegram.sendMessage(
+      chatId,
+      `🔔 Tool <b>${toolName}</b> requires approval.`,
+      {
+        parseMode: 'HTML',
+        replyMarkup: {
+          inline_keyboard: [[
+            { text: '✅ Approve', callback_data: `a:${id}` },
+            { text: '❌ Reject', callback_data: `r:${id}` },
+          ]],
+        },
+      },
+    );
+  }
+
+  async handleCallbackQuery(query: TelegramCallbackQuery): Promise<void> {
+    const data = query.data;
+    if (!data) return;
+
+    const colonIdx = data.indexOf(':');
+    if (colonIdx === -1) return;
+
+    const action = data.slice(0, colonIdx);
+    if (action !== 'a' && action !== 'r') return;
+
+    const id = data.slice(colonIdx + 1);
+    const pending = this.pendingApprovals.get(id);
+    if (!pending) {
+      await this.telegram.answerCallbackQuery(query.id, {
+        text: 'This approval has expired.',
+        showAlert: true,
+      });
+      return;
+    }
+
+    this.pendingApprovals.delete(id);
+    const approved = action === 'a';
+
+    try {
+      await this.client.submitApproval(pending.sessionId, {
+        toolCallId: pending.toolCallId,
+        approved,
+      });
+    } catch (error) {
+      const msg = error instanceof Error ? error.message : String(error);
+      this.log(`approval submission failed: ${msg}`);
+      await this.telegram.answerCallbackQuery(query.id, {
+        text: `Failed: ${msg}`,
+        showAlert: true,
+      });
+      return;
+    }
+
+    await this.telegram.answerCallbackQuery(query.id, {
+      text: approved ? 'Approved' : 'Rejected',
+    });
+
+    if (query.message) {
+      const label = approved ? '✅ Approved' : '❌ Rejected';
+      const chatId = query.message.chat.id;
+      const messageId = query.message.message_id;
+      const originalText = query.message.text ?? '';
+      void this.telegram.editMessageText(chatId, messageId, `${originalText}\n\n${label}`).catch(() => undefined);
+      void this.telegram.editMessageReplyMarkup(chatId, messageId).catch(() => undefined);
+    }
   }
 }

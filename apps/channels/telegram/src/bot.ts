@@ -140,6 +140,16 @@ export class TelegramBot {
   // --- Update handling ---
 
   private async handleUpdate(update: TelegramUpdate): Promise<void> {
+    if (update.callback_query) {
+      try {
+        await this.bridge.handleCallbackQuery(update.callback_query);
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        this.log(`error handling callback query: ${message}`);
+      }
+      return;
+    }
+
     if (!update.message) {
       return;
     }
