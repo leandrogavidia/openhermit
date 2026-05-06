@@ -5,6 +5,7 @@ import {
   buildPrincipal,
   canAccess,
   matchesGrant,
+  resolveFilePathGrants,
   resolveToolGrants,
   type Grant,
   type PolicyRow,
@@ -194,4 +195,69 @@ test('resolveToolGrants: configurable policy falls back to defaultGrants', () =>
   const grants = resolveToolGrants([], 'my_tool', configurablePolicy);
   assert.ok(!canAccess({ agentId: 'a', role: 'guest' }, grants));
   assert.ok(canAccess({ agentId: 'a', role: 'owner' }, grants));
+});
+
+// ── resolveFilePathGrants ─────────────────────────────────────────────
+
+test('resolveFilePathGrants: returns undefined when no file rows', () => {
+  assert.equal(resolveFilePathGrants([], 'primary', 'read', '/workspace/foo.txt'), undefined);
+});
+
+test('resolveFilePathGrants: matches path prefix', () => {
+  const rows: PolicyRow[] = [{
+    agentId: 'a', resourceType: 'file', resourceKey: 'primary:read:/workspace/',
+    grants: [{ type: 'role', value: 'user' }],
+    scope: { sandbox: 'primary', mode: 'read', path: '/workspace/' },
+  }];
+  const grants = resolveFilePathGrants(rows, 'primary', 'read', '/workspace/foo.txt');
+  assert.deepEqual(grants, [{ type: 'role', value: 'user' }]);
+});
+
+test('resolveFilePathGrants: longest prefix wins', () => {
+  const rows: PolicyRow[] = [
+    {
+      agentId: 'a', resourceType: 'file', resourceKey: 'primary:read:/workspace/',
+      grants: [{ type: 'any' }],
+      scope: { sandbox: 'primary', mode: 'read', path: '/workspace/' },
+    },
+    {
+      agentId: 'a', resourceType: 'file', resourceKey: 'primary:read:/workspace/private/',
+      grants: [{ type: 'role', value: 'owner' }],
+      scope: { sandbox: 'primary', mode: 'read', path: '/workspace/private/' },
+    },
+  ];
+  const g1 = resolveFilePathGrants(rows, 'primary', 'read', '/workspace/public/x');
+  assert.deepEqual(g1, [{ type: 'any' }]);
+  const g2 = resolveFilePathGrants(rows, 'primary', 'read', '/workspace/private/secret.txt');
+  assert.deepEqual(g2, [{ type: 'role', value: 'owner' }]);
+});
+
+test('resolveFilePathGrants: wildcard sandbox matches any', () => {
+  const rows: PolicyRow[] = [{
+    agentId: 'a', resourceType: 'file', resourceKey: '*:read:/workspace/',
+    grants: [{ type: 'any' }],
+    scope: { sandbox: '*', mode: 'read', path: '/workspace/' },
+  }];
+  const grants = resolveFilePathGrants(rows, 'whatever', 'read', '/workspace/foo.txt');
+  assert.deepEqual(grants, [{ type: 'any' }]);
+});
+
+test('resolveFilePathGrants: mode must match', () => {
+  const rows: PolicyRow[] = [{
+    agentId: 'a', resourceType: 'file', resourceKey: 'primary:read:/workspace/',
+    grants: [{ type: 'any' }],
+    scope: { sandbox: 'primary', mode: 'read', path: '/workspace/' },
+  }];
+  const grants = resolveFilePathGrants(rows, 'primary', 'write', '/workspace/foo.txt');
+  assert.deepEqual(grants, []);
+});
+
+test('resolveFilePathGrants: no matching path denies', () => {
+  const rows: PolicyRow[] = [{
+    agentId: 'a', resourceType: 'file', resourceKey: 'primary:read:/workspace/public/',
+    grants: [{ type: 'any' }],
+    scope: { sandbox: 'primary', mode: 'read', path: '/workspace/public/' },
+  }];
+  const grants = resolveFilePathGrants(rows, 'primary', 'read', '/workspace/private/foo.txt');
+  assert.deepEqual(grants, []);
 });

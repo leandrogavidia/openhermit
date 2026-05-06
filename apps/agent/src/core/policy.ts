@@ -90,6 +90,57 @@ export const resolveToolGrants = (
   return OPEN;
 };
 
+// ── File path policy ───────────────────────────────────────────────────
+
+export type FileMode = 'read' | 'write';
+
+interface FileScope {
+  sandbox: string;
+  mode: FileMode;
+  path: string;
+}
+
+const parseFileScope = (row: PolicyRow): FileScope | undefined => {
+  const s = row.scope;
+  if (typeof s.sandbox !== 'string' || typeof s.mode !== 'string' || typeof s.path !== 'string') {
+    return undefined;
+  }
+  return { sandbox: s.sandbox, mode: s.mode as FileMode, path: s.path };
+};
+
+/**
+ * Resolve file path-level grants. Returns undefined if no file policy rows
+ * exist (caller should fall back to tool-level policy). Returns Grant[] if
+ * a matching row is found. Returns empty [] (deny) if rows exist but none match.
+ */
+export const resolveFilePathGrants = (
+  fileRows: PolicyRow[],
+  sandbox: string,
+  mode: FileMode,
+  path: string,
+): Grant[] | undefined => {
+  if (fileRows.length === 0) return undefined;
+
+  let bestMatch: PolicyRow | undefined;
+  let bestLen = -1;
+
+  for (const row of fileRows) {
+    const scope = parseFileScope(row);
+    if (!scope) continue;
+    if (scope.mode !== mode) continue;
+    if (scope.sandbox !== '*' && scope.sandbox !== sandbox) continue;
+    if (!path.startsWith(scope.path)) continue;
+    // Longer path prefix = more specific match
+    if (scope.path.length > bestLen) {
+      bestLen = scope.path.length;
+      bestMatch = row;
+    }
+  }
+
+  if (bestMatch) return bestMatch.grants as Grant[];
+  return [];
+};
+
 export const buildPrincipal = (
   agentId: string,
   userId?: string,

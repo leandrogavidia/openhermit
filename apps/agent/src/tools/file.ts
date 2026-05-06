@@ -10,6 +10,14 @@ import {
   formatJson,
 } from './shared.js';
 import type { ExecBackend, FileWriteMode } from '../core/index.js';
+import {
+  type FileMode,
+  type Grant,
+  type PolicyRow,
+  buildPrincipal,
+  canAccess,
+  resolveFilePathGrants,
+} from '../core/policy.js';
 
 const SANDBOX_ARG = Type.Optional(
   Type.String({ description: 'Sandbox alias. Omit to use the default sandbox.' }),
@@ -94,6 +102,32 @@ const resolveBackend = (context: ToolContext, alias?: string): ExecBackend => {
   return context.execBackendManager.get(alias);
 };
 
+let cachedFileRows: { agentId: string; rows: PolicyRow[] } | undefined;
+
+const checkFilePath = async (
+  context: ToolContext,
+  sandboxAlias: string,
+  mode: FileMode,
+  path: string,
+): Promise<void> => {
+  if (!context.policyStore || !context.agentId) return;
+
+  if (!cachedFileRows || cachedFileRows.agentId !== context.agentId) {
+    const rows = await context.policyStore.list(context.agentId, 'file');
+    cachedFileRows = { agentId: context.agentId, rows };
+  }
+
+  const grants = resolveFilePathGrants(cachedFileRows.rows, sandboxAlias, mode, path);
+  if (grants === undefined) return; // no file rows → tool-level policy is sufficient
+
+  const principal = context.agentId
+    ? buildPrincipal(context.agentId, context.currentUserId, context.currentUserRole)
+    : undefined;
+  if (!principal || !canAccess(principal, grants)) {
+    throw new ValidationError(`Access denied: ${mode} ${path} (sandbox: ${sandboxAlias})`);
+  }
+};
+
 export const createFileReadTool = (context: ToolContext): PolicyAwareTool<typeof FileReadParams> => ({
   policy: { kind: 'configurable', defaultGrants: [{ type: 'role', value: 'owner' }, { type: 'role', value: 'user' }] },
   name: 'file_read',
@@ -104,6 +138,7 @@ export const createFileReadTool = (context: ToolContext): PolicyAwareTool<typeof
   execute: async (_id, args: FileReadArgs) => {
     ensureAutonomyAllows(context.security, 'file_read');
     const backend = resolveBackend(context, args.sandbox);
+    await checkFilePath(context, backend.id, 'read', args.path);
     const { data } = await backend.files.read(args.path);
     if (data.byteLength > MAX_READ_BYTES && !args.offset && !args.limit) {
       throw new ValidationError(
@@ -158,6 +193,7 @@ export const createFileWriteTool = (context: ToolContext): PolicyAwareTool<typeo
   execute: async (_id, args: FileWriteArgs) => {
     ensureAutonomyAllows(context.security, 'file_write');
     const backend = resolveBackend(context, args.sandbox);
+    await checkFilePath(context, backend.id, 'write', args.path);
     const mode: FileWriteMode = args.mode ?? 'overwrite';
     const encoding = args.encoding ?? 'utf8';
     const data =
@@ -179,6 +215,7 @@ export const createFileListTool = (context: ToolContext): PolicyAwareTool<typeof
   execute: async (_id, args: FileListArgs) => {
     ensureAutonomyAllows(context.security, 'file_list');
     const backend = resolveBackend(context, args.sandbox);
+    await checkFilePath(context, backend.id, 'read', args.path);
     const entries = await backend.files.list(args.path);
     return {
       content: asTextContent(formatJson(entries)),
@@ -196,6 +233,7 @@ export const createFileStatTool = (context: ToolContext): PolicyAwareTool<typeof
   execute: async (_id, args: FileStatArgs) => {
     ensureAutonomyAllows(context.security, 'file_stat');
     const backend = resolveBackend(context, args.sandbox);
+    await checkFilePath(context, backend.id, 'read', args.path);
     const stat = await backend.files.stat(args.path);
     return {
       content: asTextContent(stat ? formatJson(stat) : 'null\n'),
@@ -214,6 +252,7 @@ export const createFileEditTool = (context: ToolContext): PolicyAwareTool<typeof
   execute: async (_id, args: FileEditArgs) => {
     ensureAutonomyAllows(context.security, 'file_edit');
     const backend = resolveBackend(context, args.sandbox);
+    await checkFilePath(context, backend.id, 'write', args.path);
     const { data } = await backend.files.read(args.path);
     const original = data.toString('utf8');
 
@@ -254,6 +293,7 @@ export const createFileDeleteTool = (context: ToolContext): PolicyAwareTool<type
   execute: async (_id, args: FileDeleteArgs) => {
     ensureAutonomyAllows(context.security, 'file_delete');
     const backend = resolveBackend(context, args.sandbox);
+    await checkFilePath(context, backend.id, 'write', args.path);
     await backend.files.delete(args.path);
     return {
       content: asTextContent(`Deleted ${args.path}.\n`),
