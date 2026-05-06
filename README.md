@@ -6,9 +6,11 @@
 
 Open-source platform for deploying fleets of AI agents as production services — durable state, sandboxed execution, managed at scale, and the channels you already use.
 
+Built by [**Amiko**](https://heyamiko.com) — an agent-agnostic infrastructure platform for the AI era.
+
 [![npm](https://img.shields.io/npm/v/openhermit?color=cb3837&logo=npm)](https://www.npmjs.com/package/openhermit)
-[![License: MIT](https://img.shields.io/github/license/williamwa/openhermit?color=blue)](LICENSE)
-[![GitHub stars](https://img.shields.io/github/stars/williamwa/openhermit?style=social)](https://github.com/williamwa/openhermit/stargazers)
+[![License: MIT](https://img.shields.io/github/license/HCF-S/openhermit?color=blue)](LICENSE)
+[![GitHub stars](https://img.shields.io/github/stars/HCF-S/openhermit?style=social)](https://github.com/HCF-S/openhermit/stargazers)
 [![TypeScript](https://img.shields.io/badge/TypeScript-3178C6?logo=typescript&logoColor=white)](https://www.typescriptlang.org/)
 [![PRs Welcome](https://img.shields.io/badge/PRs-welcome-brightgreen.svg)](#contributing)
 
@@ -79,7 +81,7 @@ This installs both `hermit` and `openhermit`.
 For local development:
 
 ```bash
-git clone https://github.com/williamwa/openhermit.git
+git clone https://github.com/HCF-S/openhermit.git
 cd openhermit
 npm install
 ```
@@ -241,6 +243,7 @@ Important environment variables:
 - [Memory Model](docs/memory-model.md)
 - [Sandbox Model](docs/sandbox-model.md)
 - [Transport Protocol](docs/transport-protocol.md)
+- [Access Policy](docs/access-policy.md)
 - [Tools](docs/tools.md)
 - [Skills](docs/skills.md)
 - [MCP Servers](docs/mcp-servers.md)
@@ -253,18 +256,37 @@ Important environment variables:
 
 ---
 
+## About Amiko
+
+OpenHermit is the open-source agent infrastructure layer of [**Amiko**](https://heyamiko.com) — an agent-agnostic platform that integrates identity, productivity, social, and economic infrastructure into one coherent system where humans and AI agents coexist.
+
+Amiko is organized around four connected layers:
+
+- **Identity** — persistent, evolving user representation that powers personalization across all agents
+- **Productivity** — agent capability integration across tools, services, and environments
+- **Social** — 24/7 social continuity through AI twins, personality-driven matching, and agent-curated feeds
+- **Economy** — native wallet infrastructure, token utility, and agent-mediated value exchange
+
+OpenHermit provides the production runtime that makes this possible: durable state, sandboxed execution, multi-channel delivery, fleet management, and the access policy system that governs how agents act on behalf of users.
+
+Amiko is agent-agnostic by design — bring your own agent or create one on the platform. Both paths lead to the same social graph, the same identity layer, and the same economic rails.
+
+Learn more at [heyamiko.com](https://heyamiko.com).
+
+---
+
 ## Contributing
 
 OpenHermit is open source (MIT) and very much a work in progress. If the internal/external state split, the fleet operations model, or agents-as-services resonates with you — we'd love your help.
 
 Issues, PRs, design discussions, channel adapters, skills, MCP integrations, docs, and war stories from running it in your own setup are all welcome.
 
-- Open an issue: [github.com/williamwa/openhermit/issues](https://github.com/williamwa/openhermit/issues)
-- Start a discussion: [github.com/williamwa/openhermit/discussions](https://github.com/williamwa/openhermit/discussions)
-- Or just star the repo if you'd like to see where this goes ⭐
+- Open an issue: [github.com/HCF-S/openhermit/issues](https://github.com/HCF-S/openhermit/issues)
+- Start a discussion: [github.com/HCF-S/openhermit/discussions](https://github.com/HCF-S/openhermit/discussions)
+- Or just star the repo if you'd like to see where this goes
 
 ---
 
 ## License
 
-MIT © [William Wang](https://github.com/williamwa)
+MIT © [Amiko](https://heyamiko.com)
