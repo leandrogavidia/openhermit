@@ -1593,6 +1593,9 @@ export class AgentRunner implements SessionRuntime {
         ...(input.onToolCall ? { onToolCall: input.onToolCall } : {}),
         hookBus: this.bus,
         ...(() => { const n = this.makeNotifyOwnerApproval(); return n ? { notifyOwnerApproval: n } : {}; })(),
+        publishEvent: (event: Record<string, unknown>) => {
+          void this.events.publish(event as any);
+        },
       });
 
       // Connect to enabled MCP servers and add their toolsets

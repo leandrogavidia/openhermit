@@ -63,13 +63,17 @@ export const canAccess = (principal: Principal, grants: Grant[]): boolean =>
 /**
  * Evaluate access given a principal and a set of matched policy rows.
  * Priority: deny > require_approval > allow.
- * Returns the default decision if no match has a matching grant.
+ * When matches exist but none apply to the principal, deny access
+ * (the policy explicitly restricts who can use the resource).
+ * Returns the default decision only when there are no matches at all.
  */
 export const evaluateAccess = (
   principal: Principal,
   matches: PolicyMatch[],
   defaultDecision: AccessDecision = 'allow',
 ): AccessDecision => {
+  if (matches.length === 0) return defaultDecision;
+
   let hasAllow = false;
   let hasRequireApproval = false;
 
@@ -82,7 +86,7 @@ export const evaluateAccess = (
 
   if (hasRequireApproval) return 'require_approval';
   if (hasAllow) return 'allow';
-  return defaultDecision;
+  return 'deny';
 };
 
 const OPEN: Grant[] = [{ type: 'any' }];

@@ -69,6 +69,8 @@ export interface ToolContext {
   /** When set, called after an async ApprovalRequest is created to notify
    *  the owner via their configured notification channel. */
   notifyOwnerApproval?: (requestId: string, resourceType: string, resourceKey: string, requesterId: string, requesterSessionId: string) => Promise<void>;
+  /** Publish an SSE event to the session's event stream. */
+  publishEvent?: (event: Record<string, unknown>) => void;
 }
 
 /** Maximum characters for a single tool result text block (~256 KB). */
@@ -97,8 +99,10 @@ export class ApprovalRequiredError extends Error {
     public readonly resourceKey: string,
   ) {
     super(
-      `Access requires approval. An approval request has been created (id: ${requestId}). `
-      + `Ask the agent owner to run approval_review to approve or reject it.`,
+      `BLOCKED: Access to ${resourceType}/${resourceKey} requires owner approval (request id: ${requestId}). `
+      + `The owner has been notified. `
+      + `You MUST stop here and tell the user that this action requires owner approval. `
+      + `Do NOT attempt to achieve the same goal through alternative tools or workarounds.`,
     );
     this.name = 'ApprovalRequiredError';
   }
@@ -169,6 +173,17 @@ export const checkApprovalOrRequest = async (
     resourceKey,
     ...(scope ? { scope } : {}),
   });
+
+  if (context.publishEvent && context.sessionId) {
+    context.publishEvent({
+      type: 'approval_requested',
+      sessionId: context.sessionId,
+      requestId: request.id,
+      resourceType,
+      resourceKey,
+      mode: 'async',
+    });
+  }
 
   if (context.notifyOwnerApproval) {
     context.notifyOwnerApproval(request.id, resourceType, resourceKey, context.currentUserId, context.sessionId ?? 'unknown').catch(() => {});
