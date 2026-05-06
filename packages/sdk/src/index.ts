@@ -544,6 +544,25 @@ export class GatewayClient {
     );
   }
 
+  // ── Approval requests ─────────────────────────────────────────────
+
+  async listApprovalRequests(agentId: string, status?: string): Promise<unknown[]> {
+    const params = status ? `?status=${encodeURIComponent(status)}` : '';
+    return this.getJson(`/api/agents/${encodeURIComponent(agentId)}/approvals${params}`);
+  }
+
+  async getApprovalRequest(agentId: string, id: string): Promise<unknown> {
+    return this.getJson(`/api/agents/${encodeURIComponent(agentId)}/approvals/${encodeURIComponent(id)}`);
+  }
+
+  async reviewApprovalRequest(agentId: string, id: string, input: {
+    decision: 'approved' | 'rejected';
+    resolution?: 'once' | 'persistent';
+    reason?: string;
+  }): Promise<unknown> {
+    return this.postJson(`/api/agents/${encodeURIComponent(agentId)}/approvals/${encodeURIComponent(id)}/review`, input);
+  }
+
   agent(agentId: string): AgentLocalClient {
     return new AgentLocalClient({
       baseUrl: joinUrl(this.baseUrl, `/api/agents/${encodeURIComponent(agentId)}`),

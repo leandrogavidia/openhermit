@@ -66,6 +66,7 @@ export { DbMcpServerStore } from './mcp-server-store.js';
 export { DbAgentConfigStore } from './agent-config-store.js';
 export { DbSandboxStore } from './sandbox-store.js';
 export { DbPolicyStore } from './policy-store.js';
+export { DbApprovalRequestStore } from './approval-request-store.js';
 export { FileSecretStore, type ConfigDirResolver } from './file-secret-store.js';
 export { DbSecretStore, generateSecretsKey } from './db-secret-store.js';
 export {

@@ -4,6 +4,10 @@ import type {
   AgentMcpServerRecord,
   AgentRecord,
   AgentSkillRecord,
+  ApprovalRequestCreateInput,
+  ApprovalRequestRecord,
+  ApprovalResolution,
+  ApprovalStatus,
   McpServerRecord,
   MessageRow,
   InstructionEntry,
@@ -247,6 +251,27 @@ export interface PolicyStore {
     resourceKey: string,
     effect?: string,
   ): Promise<void>;
+}
+
+export interface ApprovalRequestStore {
+  create(input: ApprovalRequestCreateInput): Promise<ApprovalRequestRecord>;
+  get(id: string): Promise<ApprovalRequestRecord | undefined>;
+  list(agentId: string, status?: ApprovalStatus): Promise<ApprovalRequestRecord[]>;
+  /** Find an approved request matching the given criteria (for retry flow). */
+  findApproved(
+    agentId: string,
+    requesterId: string,
+    resourceType: string,
+    resourceKey: string,
+  ): Promise<ApprovalRequestRecord | undefined>;
+  resolve(
+    id: string,
+    decision: 'approved' | 'rejected',
+    resolvedBy: string,
+    resolution?: ApprovalResolution,
+    reason?: string,
+  ): Promise<ApprovalRequestRecord>;
+  expireOld(): Promise<number>;
 }
 
 export interface InternalStateStore {

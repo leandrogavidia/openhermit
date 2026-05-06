@@ -8,7 +8,7 @@ import {
   type LangfuseClientLike,
 } from '@openhermit/agent/langfuse';
 import { startChannels, startSingleChannel, stopChannels, type ChannelStatus, type WebhookRequest, type WebhookResponse } from '@openhermit/agent/channels';
-import type { AgentConfigStore, AgentStore, McpServerStore, PolicyStore, SandboxStore, SecretStore, SkillStore } from '@openhermit/store';
+import type { AgentConfigStore, AgentStore, ApprovalRequestStore, McpServerStore, PolicyStore, SandboxStore, SecretStore, SkillStore } from '@openhermit/store';
 
 import type { ChannelRegistry } from './auth.js';
 
@@ -95,6 +95,12 @@ export class AgentInstanceManager {
     this.policyStore = store;
   }
 
+  private approvalRequestStore: ApprovalRequestStore | undefined;
+
+  setApprovalRequestStore(store: ApprovalRequestStore): void {
+    this.approvalRequestStore = store;
+  }
+
   setChannelStore(store: import('@openhermit/store').DbAgentChannelStore): void {
     this.channelStore = store;
   }
@@ -166,6 +172,7 @@ export class AgentInstanceManager {
       ...(this.mcpServerStore ? { mcpServerStore: this.mcpServerStore } : {}),
       ...(this.sandboxStore ? { sandboxStore: this.sandboxStore } : {}),
       ...(this.policyStore ? { policyStore: this.policyStore } : {}),
+      ...(this.approvalRequestStore ? { approvalRequestStore: this.approvalRequestStore } : {}),
     });
 
     this.runners.set(agentId, runner);

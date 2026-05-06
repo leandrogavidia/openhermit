@@ -360,4 +360,62 @@ export const registerConfigCommand = (program: Command): void => {
         handleError(error);
       }
     });
+
+  // ── approvals ────────────────────────────────────────────────────
+
+  const approvals = cfg
+    .command('approvals')
+    .description('Manage approval requests (inherits --agent from `config`)');
+
+  approvals
+    .command('list')
+    .description('List approval requests')
+    .option('--status <status>', 'Filter by status (pending, approved, rejected, expired)')
+    .action(async function (this: Command) {
+      const agentId = resolveAgentId(this);
+      try {
+        const gateway = createGateway();
+        const requests = await gateway.listApprovalRequests(agentId, this.opts().status) as Array<Record<string, unknown>>;
+        if (requests.length === 0) {
+          console.log('No approval requests.');
+          return;
+        }
+        for (const r of requests) {
+          const status = r.status as string;
+          const badge = status === 'pending' ? '⏳' : status === 'approved' ? '✅' : status === 'rejected' ? '❌' : '⌛';
+          console.log(`  ${badge} ${r.id}`);
+          console.log(`    ${r.resourceType}/${r.resourceKey} [${status}]`);
+          console.log(`    requester: ${r.requesterId} | session: ${r.sessionId}`);
+          if (r.resolvedBy) console.log(`    resolved by: ${r.resolvedBy}${r.resolution ? ` (${r.resolution})` : ''}`);
+          if (r.reason) console.log(`    reason: ${r.reason}`);
+        }
+      } catch (error) {
+        handleError(error);
+      }
+    });
+
+  approvals
+    .command('review <id> <decision>')
+    .description('Approve or reject a request (decision: approved | rejected)')
+    .option('--resolution <res>', 'Resolution: once (default) or persistent')
+    .option('--reason <reason>', 'Reason for the decision')
+    .action(async function (this: Command, id: string, decision: string) {
+      const agentId = resolveAgentId(this);
+      if (decision !== 'approved' && decision !== 'rejected') {
+        console.error('Decision must be "approved" or "rejected".');
+        process.exit(1);
+      }
+      const opts = this.opts() as { resolution?: string; reason?: string };
+      try {
+        const gateway = createGateway();
+        await gateway.reviewApprovalRequest(agentId, id, {
+          decision: decision as 'approved' | 'rejected',
+          ...(opts.resolution ? { resolution: opts.resolution as 'once' | 'persistent' } : {}),
+          ...(opts.reason ? { reason: opts.reason } : {}),
+        });
+        console.log(`Request ${id}: ${decision}`);
+      } catch (error) {
+        handleError(error);
+      }
+    });
 };

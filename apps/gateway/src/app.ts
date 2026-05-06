@@ -23,6 +23,7 @@ import type {
   DbAgentConfigStore,
   DbMcpServerStore,
   DbPolicyStore,
+  DbApprovalRequestStore,
   DbScheduleStore,
   DbSkillStore,
   DbUserStore,
@@ -209,6 +210,7 @@ export interface GatewayAppOptions {
   instructionStore?: import('@openhermit/store').DbInstructionStore | undefined;
   sandboxStore?: SandboxStore | undefined;
   policyStore?: DbPolicyStore | undefined;
+  approvalRequestStore?: DbApprovalRequestStore | undefined;
   /** Named sandbox presets, keyed by preset name. */
   sandboxPresets?: Record<string, SandboxPreset> | undefined;
   /** Default preset to use when an agent is created without an explicit `sandbox` field. Null disables auto-provisioning. */
@@ -2310,6 +2312,72 @@ export const createGatewayApp = (options: GatewayAppOptions): Hono => {
     if (!existing) throw new NotFoundError(`Policy not found: ${resourceType}/${resourceKey}`);
     await store.delete(agentId, resourceType, resourceKey, effect);
     return c.json({ ok: true });
+  });
+
+  // --- per-agent approval request management ---
+
+  const requireApprovalStore = (): DbApprovalRequestStore => {
+    if (!options.approvalRequestStore) {
+      throw new OpenHermitError('Approval request store is not configured.', 'not_configured', 500);
+    }
+    return options.approvalRequestStore;
+  };
+
+  app.get('/api/agents/:agentId/approvals', async (c) => {
+    const agentId = c.req.param('agentId') ?? '';
+    await requireOwnerOrAdmin(c, agentId);
+    const store = requireApprovalStore();
+    const status = (c.req.query('status') ?? undefined) as import('@openhermit/store').ApprovalStatus | undefined;
+    const requests = await store.list(agentId, status);
+    return c.json(requests);
+  });
+
+  app.get('/api/agents/:agentId/approvals/:id', async (c) => {
+    const agentId = c.req.param('agentId') ?? '';
+    await requireOwnerOrAdmin(c, agentId);
+    const store = requireApprovalStore();
+    const id = c.req.param('id') ?? '';
+    const request = await store.get(id);
+    if (!request || request.agentId !== agentId) {
+      throw new NotFoundError(`Approval request not found: ${id}`);
+    }
+    return c.json(request);
+  });
+
+  app.post('/api/agents/:agentId/approvals/:id/review', async (c) => {
+    const agentId = c.req.param('agentId') ?? '';
+    await requireOwnerOrAdmin(c, agentId);
+    const store = requireApprovalStore();
+    const id = c.req.param('id') ?? '';
+    const body = await c.req.json() as Record<string, unknown>;
+    const decision = body.decision as string;
+    if (decision !== 'approved' && decision !== 'rejected') {
+      throw new ValidationError('decision must be "approved" or "rejected"');
+    }
+    const request = await store.get(id);
+    if (!request || request.agentId !== agentId) {
+      throw new NotFoundError(`Approval request not found: ${id}`);
+    }
+    if (request.status !== 'pending') {
+      throw new ValidationError(`Request is already ${request.status}`);
+    }
+    const resolvedBy = (c as any).get?.('userId') ?? 'owner';
+    const resolution = typeof body.resolution === 'string' ? body.resolution as 'once' | 'persistent' : undefined;
+    const reason = typeof body.reason === 'string' ? body.reason : undefined;
+    const updated = await store.resolve(id, decision, resolvedBy, resolution, reason);
+
+    if (decision === 'approved' && resolution === 'persistent' && options.policyStore) {
+      await options.policyStore.upsert({
+        agentId: request.agentId,
+        resourceType: request.resourceType,
+        resourceKey: request.resourceKey,
+        effect: 'allow' as import('@openhermit/store').PolicyEffect,
+        grants: [{ type: 'user', value: request.requesterId }],
+        scope: request.scope,
+      });
+    }
+
+    return c.json(updated);
   });
 
   // --- admin: MCP servers management ---

@@ -82,6 +82,7 @@ export interface ToolContext {
   execBackendManager?: ExecBackendManager;
   scheduleStore?: ScheduleStore;
   policyStore?: PolicyStore;
+  approvalRequestStore?: import('@openhermit/store').ApprovalRequestStore;
   /** Channel outbound adapters keyed by channel name (e.g. 'telegram'). */
   channelOutbound?: Map<string, ChannelOutbound>;
   onExec?: () => void;

@@ -14,6 +14,7 @@ import {
   DbMcpServerStore,
   DbSandboxStore,
   DbPolicyStore,
+  DbApprovalRequestStore,
   DbScheduleStore,
   DbSkillStore,
   DbUserStore,
@@ -122,6 +123,7 @@ export const main = async (): Promise<void> => {
   let instructionStore: DbInstructionStore | undefined;
   let sandboxStore: DbSandboxStore | undefined;
   let policyStore: DbPolicyStore | undefined;
+  let approvalRequestStore: DbApprovalRequestStore | undefined;
   if (process.env.DATABASE_URL) {
     try {
       await runMigrations();
@@ -135,6 +137,7 @@ export const main = async (): Promise<void> => {
       instructionStore = await DbInstructionStore.open();
       sandboxStore = await DbSandboxStore.open();
       policyStore = await DbPolicyStore.open();
+      approvalRequestStore = await DbApprovalRequestStore.open();
       if (process.env.OPENHERMIT_SECRETS_KEY) {
         agentChannelStore = await DbAgentChannelStore.open();
       }
@@ -271,6 +274,10 @@ export const main = async (): Promise<void> => {
     instances.setPolicyStore(policyStore);
   }
 
+  if (approvalRequestStore) {
+    instances.setApprovalRequestStore(approvalRequestStore);
+  }
+
   if (sandboxStore) {
     instances.setSandboxStore(sandboxStore);
     if (agentStore && configStore) {
@@ -316,6 +323,7 @@ export const main = async (): Promise<void> => {
     ...(instructionStore ? { instructionStore } : {}),
     ...(sandboxStore ? { sandboxStore } : {}),
     ...(policyStore ? { policyStore } : {}),
+    ...(approvalRequestStore ? { approvalRequestStore } : {}),
     sandboxPresets: config.sandboxPresets,
     autoProvisionSandbox: config.autoProvisionSandbox,
     channelRegistry: channels,

@@ -641,6 +641,39 @@ export const deletePolicy = (resourceType: string, resourceKey: string, effect?:
   return apiFetch<{ ok: boolean }>(`/policies/${encodeURIComponent(resourceType)}/${encodeURIComponent(resourceKey)}${qs}`, { method: 'DELETE' });
 };
 
+// ── Approval Requests ──────────────────────────────────────────────
+
+export interface ApprovalRequestInfo {
+  id: string;
+  agentId: string;
+  sessionId: string;
+  requesterId: string;
+  resourceType: string;
+  resourceKey: string;
+  scope: Record<string, unknown>;
+  status: 'pending' | 'approved' | 'rejected' | 'expired';
+  resolution: 'once' | 'persistent' | null;
+  resolvedBy: string | null;
+  reason: string | null;
+  createdAt: string;
+  resolvedAt: string | null;
+  ttlMinutes: number;
+}
+
+export const fetchApprovalRequests = (status?: string) => {
+  const params = status ? `?status=${encodeURIComponent(status)}` : '';
+  return apiFetch<ApprovalRequestInfo[]>(`/approvals${params}`);
+};
+
+export const reviewApprovalRequest = (id: string, data: {
+  decision: 'approved' | 'rejected';
+  resolution?: 'once' | 'persistent';
+  reason?: string;
+}) => apiFetch<ApprovalRequestInfo>(`/approvals/${encodeURIComponent(id)}/review`, {
+  method: 'POST',
+  body: data,
+});
+
 // Secrets — server returns values masked (e.g. "abcd********wxyz").
 // Use setAgentSecret / deleteAgentSecret for per-key edits.
 export const fetchAgentSecrets = () => apiFetch<Record<string, string>>('/secrets');

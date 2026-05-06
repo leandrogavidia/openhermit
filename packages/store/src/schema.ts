@@ -167,6 +167,26 @@ export const sandboxes = pgTable('sandboxes', {
   index('idx_sandboxes_type_external').on(table.type, table.externalId),
 ]);
 
+export const approvalRequests = pgTable('approval_requests', {
+  id: text('id').primaryKey(),
+  agentId: text('agent_id').notNull(),
+  sessionId: text('session_id').notNull(),
+  requesterId: text('requester_id').notNull(),
+  resourceType: text('resource_type').notNull(),
+  resourceKey: text('resource_key').notNull(),
+  scope: jsonb('scope').$type<Record<string, unknown>>().notNull().default({}),
+  status: text('status').notNull().default('pending'),
+  resolution: text('resolution'),
+  resolvedBy: text('resolved_by'),
+  reason: text('reason'),
+  createdAt: text('created_at').notNull(),
+  resolvedAt: text('resolved_at'),
+  ttlMinutes: integer('ttl_minutes').notNull().default(60),
+}, (table) => [
+  index('idx_approval_requests_agent').on(table.agentId, table.status),
+  index('idx_approval_requests_lookup').on(table.agentId, table.requesterId, table.resourceType, table.resourceKey, table.status),
+]);
+
 export const agentPolicies = pgTable('agent_policies', {
   id: text('id').primaryKey(),
   agentId: text('agent_id').notNull(),

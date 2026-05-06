@@ -63,6 +63,36 @@ export interface PolicyRecord {
   updatedAt: string;
 }
 
+export type ApprovalStatus = 'pending' | 'approved' | 'rejected' | 'expired';
+export type ApprovalResolution = 'once' | 'persistent';
+
+export interface ApprovalRequestRecord {
+  id: string;
+  agentId: string;
+  sessionId: string;
+  requesterId: string;
+  resourceType: string;
+  resourceKey: string;
+  scope: Record<string, unknown>;
+  status: ApprovalStatus;
+  resolution: ApprovalResolution | null;
+  resolvedBy: string | null;
+  reason: string | null;
+  createdAt: string;
+  resolvedAt: string | null;
+  ttlMinutes: number;
+}
+
+export interface ApprovalRequestCreateInput {
+  agentId: string;
+  sessionId: string;
+  requesterId: string;
+  resourceType: string;
+  resourceKey: string;
+  scope?: Record<string, unknown>;
+  ttlMinutes?: number;
+}
+
 export interface SandboxCreateInput {
   id?: string;
   agentId: string;

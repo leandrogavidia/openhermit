@@ -5,8 +5,9 @@ import { McpPanel } from './McpPanel';
 import { SchedulesPanel } from './SchedulesPanel';
 import { ChannelsPanel } from './ChannelsPanel';
 import { PoliciesPanel } from './PoliciesPanel';
+import { ApprovalsPanel } from './ApprovalsPanel';
 
-export type ManageTab = 'basic' | 'secrets' | 'skills' | 'mcp' | 'schedules' | 'channels' | 'policies';
+export type ManageTab = 'basic' | 'secrets' | 'skills' | 'mcp' | 'schedules' | 'channels' | 'policies' | 'approvals';
 
 const tabs: { id: ManageTab; label: string }[] = [
   { id: 'basic', label: 'Basic' },
@@ -16,6 +17,7 @@ const tabs: { id: ManageTab; label: string }[] = [
   { id: 'mcp', label: 'MCP Servers' },
   { id: 'schedules', label: 'Schedules' },
   { id: 'policies', label: 'Policies' },
+  { id: 'approvals', label: 'Approvals' },
 ];
 
 interface Props {
@@ -45,6 +47,7 @@ export function ManagePanel({ tab, onTabChange }: Props) {
         {tab === 'schedules' && <SchedulesPanel />}
         {tab === 'channels' && <ChannelsPanel />}
         {tab === 'policies' && <PoliciesPanel />}
+        {tab === 'approvals' && <ApprovalsPanel />}
       </div>
     </div>
   );

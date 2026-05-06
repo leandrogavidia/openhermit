@@ -17,6 +17,7 @@ import { createExecToolset } from './tools/sandbox-exec.js';
 import { createFileToolset } from './tools/file.js';
 import { createScheduleToolset } from './tools/schedule.js';
 import { createPolicyToolset } from './tools/policy.js';
+import { createApprovalToolset } from './tools/approval-request.js';
 
 export type {
   ApprovalCallback,
@@ -70,6 +71,9 @@ export const createBuiltInToolsets = (
   }
   if (context.policyStore) {
     toolsets.push(createPolicyToolset(context));
+  }
+  if (context.approvalRequestStore) {
+    toolsets.push(createApprovalToolset(context));
   }
   // working_memory_update is intentionally excluded from the main agent —
   // it is only available to the introspection agent to prevent overwrite conflicts.
