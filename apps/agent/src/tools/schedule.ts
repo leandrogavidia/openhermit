@@ -112,7 +112,7 @@ const createScheduleListTool = (context: ToolContext): PolicyAwareTool<typeof Sc
 });
 
 const createScheduleCreateTool = (context: ToolContext): PolicyAwareTool<typeof ScheduleCreateParams> => ({
-  policy: { kind: 'configurable', defaultGrants: [{ type: 'role', value: 'owner' }, { type: 'role', value: 'user' }] },
+  policy: { kind: 'configurable', defaultGrants: [{ type: 'role', value: 'owner' }] },
   name: 'schedule_create',
   label: 'Create Schedule',
   description:
@@ -167,7 +167,7 @@ const createScheduleCreateTool = (context: ToolContext): PolicyAwareTool<typeof 
 });
 
 const createScheduleUpdateTool = (context: ToolContext): PolicyAwareTool<typeof ScheduleUpdateParams> => ({
-  policy: { kind: 'configurable', defaultGrants: [{ type: 'role', value: 'owner' }, { type: 'role', value: 'user' }] },
+  policy: { kind: 'configurable', defaultGrants: [{ type: 'role', value: 'owner' }] },
   name: 'schedule_update',
   label: 'Update Schedule',
   description: 'Update an existing schedule. Can change status (active/paused), prompt, or cron expression.',
@@ -200,7 +200,7 @@ const createScheduleUpdateTool = (context: ToolContext): PolicyAwareTool<typeof 
 });
 
 const createScheduleDeleteTool = (context: ToolContext): PolicyAwareTool<typeof ScheduleDeleteParams> => ({
-  policy: { kind: 'configurable', defaultGrants: [{ type: 'role', value: 'owner' }, { type: 'role', value: 'user' }] },
+  policy: { kind: 'configurable', defaultGrants: [{ type: 'role', value: 'owner' }] },
   name: 'schedule_delete',
   label: 'Delete Schedule',
   description: 'Delete a scheduled job permanently.',
@@ -227,7 +227,7 @@ const createScheduleDeleteTool = (context: ToolContext): PolicyAwareTool<typeof 
 });
 
 const createScheduleTriggerTool = (context: ToolContext): PolicyAwareTool<typeof ScheduleTriggerParams> => ({
-  policy: { kind: 'configurable', defaultGrants: [{ type: 'role', value: 'owner' }, { type: 'role', value: 'user' }] },
+  policy: { kind: 'configurable', defaultGrants: [{ type: 'role', value: 'owner' }] },
   name: 'schedule_trigger',
   label: 'Trigger Schedule Now',
   description: 'Trigger a scheduled job immediately, regardless of its next run time. The job runs in its configured session.',
