@@ -49,6 +49,9 @@ export const sessions = pgTable('sessions', {
 }, (table) => [
   primaryKey({ columns: [table.agentId, table.sessionId] }),
   index('idx_sessions_agent').on(table.agentId, table.lastActivityAt),
+  // GIN index supports `WHERE user_ids @> '["..."]'` containment lookups
+  // used to find every session a given user has touched.
+  index('idx_sessions_user_ids_gin').using('gin', table.userIds),
 ]);
 
 export const sessionEvents = pgTable('session_events', {

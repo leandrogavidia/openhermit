@@ -621,11 +621,16 @@ export const createGatewayApp = (options: GatewayAppOptions): Hono => {
         throw new OpenHermitError('User store is not configured.', 'not_configured', 500);
       }
       const members = await userStore.listByAgent({ agentId });
-      const enriched = await Promise.all(members.map(async (m) => {
-        const [user, identities] = await Promise.all([
-          userStore!.get(m.userId),
-          userStore!.listIdentities(m.userId),
-        ]);
+      const memberIds = members.map((m) => m.userId);
+      const [identitiesMap, userRecords] = await Promise.all([
+        userStore.listIdentitiesByUserIds(memberIds),
+        Promise.all(memberIds.map((id) => userStore!.get(id))),
+      ]);
+      const userById = new Map<string, typeof userRecords[number]>();
+      memberIds.forEach((id, i) => userById.set(id, userRecords[i]));
+      const enriched = members.map((m) => {
+        const user = userById.get(m.userId);
+        const identities = identitiesMap.get(m.userId) ?? [];
         return {
           userId: m.userId,
           role: m.role,
@@ -637,7 +642,7 @@ export const createGatewayApp = (options: GatewayAppOptions): Hono => {
             createdAt: i.createdAt,
           })),
         };
-      }));
+      });
       return c.json(enriched);
     });
 
@@ -1362,19 +1367,18 @@ export const createGatewayApp = (options: GatewayAppOptions): Hono => {
     requireAdmin(c.req.header('authorization'));
     if (!userStore) return c.json([]);
     const list = await userStore.list();
-    const enriched = await Promise.all(list.map(async (u) => {
-      const [identities, agents] = await Promise.all([
-        userStore.listIdentities(u.userId),
-        userStore.listAgentRoles(u.userId),
-      ]);
-      return {
-        userId: u.userId,
-        name: u.name ?? null,
-        createdAt: u.createdAt,
-        updatedAt: u.updatedAt,
-        identityCount: identities.length,
-        agentCount: agents.length,
-      };
+    const userIds = list.map((u) => u.userId);
+    const [identitiesMap, agentsMap] = await Promise.all([
+      userStore.listIdentitiesByUserIds(userIds),
+      userStore.listAgentRolesByUserIds(userIds),
+    ]);
+    const enriched = list.map((u) => ({
+      userId: u.userId,
+      name: u.name ?? null,
+      createdAt: u.createdAt,
+      updatedAt: u.updatedAt,
+      identityCount: (identitiesMap.get(u.userId) ?? []).length,
+      agentCount: (agentsMap.get(u.userId) ?? []).length,
     }));
     return c.json(enriched);
   });

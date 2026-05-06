@@ -375,6 +375,18 @@ export const main = async (): Promise<void> => {
   // Start agents from database after server is listening (channels need the gateway URL).
   if (agentStore && config.autoStartAgents) {
     const dbAgents = await agentStore.list();
+    // Pre-load all sandbox rows in a single query so we don't N+1 on boot.
+    // Group by agentId; the host-claim invariant below still walks agents
+    // sequentially because it's a serial first-wins decision.
+    const sandboxByAgent = new Map<string, Array<{ type: string }>>();
+    if (sandboxStore) {
+      const allSandboxes = await sandboxStore.listAll();
+      for (const row of allSandboxes) {
+        const arr = sandboxByAgent.get(row.agentId);
+        if (arr) arr.push(row);
+        else sandboxByAgent.set(row.agentId, [row]);
+      }
+    }
     // Defensive: if DB tampering produced multiple host sandboxes, only the
     // first agent encountered claims the host backend in this pass. The
     // create-time check (POST /sandboxes) is the primary guard.
@@ -382,7 +394,7 @@ export const main = async (): Promise<void> => {
     for (const agent of dbAgents) {
       try {
         if (sandboxStore) {
-          const rows = await sandboxStore.listByAgent(agent.agentId);
+          const rows = sandboxByAgent.get(agent.agentId) ?? [];
           const wantsHost = rows.some((r) => r.type === 'host');
           if (wantsHost && hostClaimed && hostClaimed !== agent.agentId) {
             logStartup(`skipping agent ${agent.agentId}: host backend already in use by ${hostClaimed}`);

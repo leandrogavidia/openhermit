@@ -59,7 +59,7 @@ export const startChannels = async (
   const handles: ChannelHandle[] = [];
   const statuses: ChannelStatus[] = [];
 
-  const tryStart = async (name: string, fn: () => Promise<ChannelHandle | undefined>) => {
+  const tryStart = async (name: string, fn: () => Promise<ChannelHandle | undefined>): Promise<void> => {
     try {
       const handle = await fn();
       if (handle) {
@@ -75,17 +75,20 @@ export const startChannels = async (
     }
   };
 
+  // Start all enabled channels in parallel — each is an independent network
+  // connection (Telegram poll, Slack RTM, Discord WS) and they don't share
+  // state, so serial startup just delays the slowest one.
+  const tasks: Array<Promise<void>> = [];
   if (channels.telegram?.enabled) {
-    await tryStart('telegram', () => startTelegram(channels.telegram!, context));
+    tasks.push(tryStart('telegram', () => startTelegram(channels.telegram!, context)));
   }
-
   if (channels.slack?.enabled) {
-    await tryStart('slack', () => startSlack(channels.slack!, context));
+    tasks.push(tryStart('slack', () => startSlack(channels.slack!, context)));
   }
-
   if (channels.discord?.enabled) {
-    await tryStart('discord', () => startDiscord(channels.discord!, context));
+    tasks.push(tryStart('discord', () => startDiscord(channels.discord!, context)));
   }
+  await Promise.all(tasks);
 
   return { handles, statuses };
 };

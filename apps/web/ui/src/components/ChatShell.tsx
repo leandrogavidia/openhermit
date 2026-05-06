@@ -1,9 +1,13 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { lazy, Suspense, useCallback, useEffect, useRef, useState } from 'react';
 import { AgentWsClient, fetchAgentInfo, getDisplayName, getUserId, type Connection, type SessionSummary, type HistoryMessage, type OutboundEvent } from '../api';
 import { SessionList } from './SessionList';
 import { ChatMessages, type ChatItem } from './ChatMessages';
 import { Composer } from './Composer';
-import { ManagePanel, type ManageTab } from './ManagePanel';
+// ManagePanel only needed when user opens /manage — keep it out of the
+// hot chat path.
+const ManagePanel = lazy(() => import('./ManagePanel').then((m) => ({ default: m.ManagePanel })));
+
+type ManageTab = 'basic' | 'secrets' | 'skills' | 'mcp' | 'schedules' | 'channels' | 'policies';
 
 const createSessionId = () =>
   `web:${new Date().toISOString().slice(0, 10)}-${crypto.randomUUID().slice(0, 8)}`;
@@ -576,7 +580,9 @@ export function ChatShell({ connection, role, onDisconnect }: Props) {
               </div>
             </header>
             <div className="chat__manage-area">
-              <ManagePanel tab={manageTab} onTabChange={setManageTab} />
+              <Suspense fallback={null}>
+                <ManagePanel tab={manageTab} onTabChange={setManageTab} />
+              </Suspense>
             </div>
           </>
         ) : (

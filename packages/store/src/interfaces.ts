@@ -104,6 +104,9 @@ export interface UserStore {
   /** List identities for a given user. */
   listIdentities(userId: string): Promise<UserIdentity[]>;
 
+  /** Batch: list identities for many users in a single query. */
+  listIdentitiesByUserIds(userIds: string[]): Promise<Map<string, UserIdentity[]>>;
+
   /** Mark a user as merged into another. Re-links all identities to the target. */
   merge(fromUserId: string, intoUserId: string): Promise<void>;
 
@@ -121,6 +124,9 @@ export interface UserStore {
 
   /** List users for an agent (with roles). */
   listByAgent(scope: StoreScope): Promise<UserAgentRecord[]>;
+
+  /** Batch: list (agentId, role) bindings for many users in a single query. */
+  listAgentRolesByUserIds(userIds: string[]): Promise<Map<string, UserAgentRecord[]>>;
 }
 
 export interface SkillStore {

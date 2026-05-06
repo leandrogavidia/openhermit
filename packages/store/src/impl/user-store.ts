@@ -1,5 +1,5 @@
 import { drizzle } from 'drizzle-orm/node-postgres';
-import { eq, and, asc, isNull, sql } from 'drizzle-orm';
+import { eq, and, asc, isNull, sql, inArray } from 'drizzle-orm';
 import pg from 'pg';
 
 import type { UserStore } from '../interfaces.js';
@@ -116,6 +116,26 @@ export class DbUserStore implements UserStore {
     }));
   }
 
+  async listIdentitiesByUserIds(userIdList: string[]): Promise<Map<string, UserIdentity[]>> {
+    const grouped = new Map<string, UserIdentity[]>();
+    if (userIdList.length === 0) return grouped;
+    const rows = await this.db.select().from(userIdentities)
+      .where(inArray(userIdentities.userId, userIdList))
+      .orderBy(asc(userIdentities.createdAt));
+    for (const row of rows) {
+      const entry: UserIdentity = {
+        userId: row.userId,
+        channel: row.channel,
+        channelUserId: row.channelUserId,
+        createdAt: row.createdAt,
+      };
+      const existing = grouped.get(row.userId);
+      if (existing) existing.push(entry);
+      else grouped.set(row.userId, [entry]);
+    }
+    return grouped;
+  }
+
   async merge(fromUserId: string, intoUserId: string): Promise<void> {
     await this.db.transaction(async (tx) => {
       await tx.update(userIdentities).set({ userId: intoUserId })
@@ -191,6 +211,26 @@ export class DbUserStore implements UserStore {
       role: row.role as UserRole,
       createdAt: row.createdAt,
     }));
+  }
+
+  async listAgentRolesByUserIds(userIdList: string[]): Promise<Map<string, UserAgentRecord[]>> {
+    const grouped = new Map<string, UserAgentRecord[]>();
+    if (userIdList.length === 0) return grouped;
+    const rows = await this.db.select().from(userAgents)
+      .where(inArray(userAgents.userId, userIdList))
+      .orderBy(asc(userAgents.createdAt));
+    for (const row of rows) {
+      const entry: UserAgentRecord = {
+        userId: row.userId,
+        agentId: row.agentId,
+        role: row.role as UserRole,
+        createdAt: row.createdAt,
+      };
+      const existing = grouped.get(row.userId);
+      if (existing) existing.push(entry);
+      else grouped.set(row.userId, [entry]);
+    }
+    return grouped;
   }
 
   private async cleanupOrphanedUser(orphanUserId: string, newUserId: string): Promise<void> {
