@@ -59,7 +59,8 @@ export const createSandboxExecTool = (
 
     if (context.policyStore && context.agentId) {
       const execRows = await context.policyStore.list(context.agentId, 'exec');
-      const grants = resolveExecGrants(execRows, backend.id, args.command);
+      const cwd = args.cwd ?? backend.agentHome;
+      const grants = resolveExecGrants(execRows, backend.id, args.command, cwd);
       if (grants !== undefined) {
         const principal = buildPrincipal(context.agentId, context.currentUserId, context.currentUserRole);
         if (!canAccess(principal, grants)) {

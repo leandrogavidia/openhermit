@@ -328,3 +328,93 @@ test('resolveExecGrants: sandbox mismatch denied', () => {
   const grants = resolveExecGrants(rows, 'other', 'git status');
   assert.deepEqual(grants, []);
 });
+
+// ── resolveExecGrants: cwd scoping ──────────────────────────────────
+
+test('resolveExecGrants: rows without cwd match any cwd', () => {
+  const rows: PolicyRow[] = [{
+    agentId: 'a', resourceType: 'exec', resourceKey: 'primary:*',
+    grants: [{ type: 'role', value: 'owner' }],
+    scope: { sandbox: 'primary', command: '*' },
+  }];
+  const grants = resolveExecGrants(rows, 'primary', 'ls', '/workspace/project');
+  assert.deepEqual(grants, [{ type: 'role', value: 'owner' }]);
+});
+
+test('resolveExecGrants: cwd prefix match', () => {
+  const rows: PolicyRow[] = [{
+    agentId: 'a', resourceType: 'exec', resourceKey: 'primary:/workspace/:*',
+    grants: [{ type: 'any' }],
+    scope: { sandbox: 'primary', command: '*', cwd: '/workspace/' },
+  }];
+  const grants = resolveExecGrants(rows, 'primary', 'npm test', '/workspace/project');
+  assert.deepEqual(grants, [{ type: 'any' }]);
+});
+
+test('resolveExecGrants: cwd mismatch denied', () => {
+  const rows: PolicyRow[] = [{
+    agentId: 'a', resourceType: 'exec', resourceKey: 'primary:/workspace/:*',
+    grants: [{ type: 'any' }],
+    scope: { sandbox: 'primary', command: '*', cwd: '/workspace/' },
+  }];
+  const grants = resolveExecGrants(rows, 'primary', 'ls', '/etc');
+  assert.deepEqual(grants, []);
+});
+
+test('resolveExecGrants: cwd-scoped row wins over no-cwd row', () => {
+  const rows: PolicyRow[] = [
+    {
+      agentId: 'a', resourceType: 'exec', resourceKey: 'primary:*',
+      grants: [{ type: 'role', value: 'owner' }],
+      scope: { sandbox: 'primary', command: '*' },
+    },
+    {
+      agentId: 'a', resourceType: 'exec', resourceKey: 'primary:/workspace/:*',
+      grants: [{ type: 'any' }],
+      scope: { sandbox: 'primary', command: '*', cwd: '/workspace/' },
+    },
+  ];
+  // cwd-scoped row is more specific
+  const g1 = resolveExecGrants(rows, 'primary', 'ls', '/workspace/project');
+  assert.deepEqual(g1, [{ type: 'any' }]);
+  // Outside cwd scope, falls back to no-cwd row
+  const g2 = resolveExecGrants(rows, 'primary', 'ls', '/etc');
+  assert.deepEqual(g2, [{ type: 'role', value: 'owner' }]);
+});
+
+test('resolveExecGrants: exact command + cwd beats wildcard command + cwd', () => {
+  const rows: PolicyRow[] = [
+    {
+      agentId: 'a', resourceType: 'exec', resourceKey: 'primary:/workspace/:*',
+      grants: [{ type: 'role', value: 'owner' }],
+      scope: { sandbox: 'primary', command: '*', cwd: '/workspace/' },
+    },
+    {
+      agentId: 'a', resourceType: 'exec', resourceKey: 'primary:/workspace/:npm test',
+      grants: [{ type: 'any' }],
+      scope: { sandbox: 'primary', command: 'npm test', cwd: '/workspace/' },
+    },
+  ];
+  const g1 = resolveExecGrants(rows, 'primary', 'npm test', '/workspace/project');
+  assert.deepEqual(g1, [{ type: 'any' }]);
+  const g2 = resolveExecGrants(rows, 'primary', 'rm -rf /', '/workspace/project');
+  assert.deepEqual(g2, [{ type: 'role', value: 'owner' }]);
+});
+
+test('resolveExecGrants: cwd scope skipped when no cwd provided', () => {
+  const rows: PolicyRow[] = [
+    {
+      agentId: 'a', resourceType: 'exec', resourceKey: 'primary:*',
+      grants: [{ type: 'role', value: 'owner' }],
+      scope: { sandbox: 'primary', command: '*' },
+    },
+    {
+      agentId: 'a', resourceType: 'exec', resourceKey: 'primary:/workspace/:*',
+      grants: [{ type: 'any' }],
+      scope: { sandbox: 'primary', command: '*', cwd: '/workspace/' },
+    },
+  ];
+  // No cwd passed → cwd-scoped row is skipped
+  const grants = resolveExecGrants(rows, 'primary', 'ls');
+  assert.deepEqual(grants, [{ type: 'role', value: 'owner' }]);
+});

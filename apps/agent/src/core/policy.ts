@@ -155,19 +155,41 @@ export const resolveExecGrants = (
   execRows: PolicyRow[],
   sandbox: string,
   command: string,
+  cwd?: string,
 ): Grant[] | undefined => {
   if (execRows.length === 0) return undefined;
 
   const normalized = normalizeCommand(command);
 
+  let bestMatch: PolicyRow | undefined;
+  let bestSpecificity = -1;
+
   for (const row of execRows) {
     const s = row.scope;
     if (typeof s.sandbox !== 'string' || typeof s.command !== 'string') continue;
     if (s.sandbox !== '*' && s.sandbox !== sandbox) continue;
-    if (s.command === '*') return row.grants as Grant[];
-    if (normalizeCommand(s.command) === normalized) return row.grants as Grant[];
+
+    const cwdScope = typeof s.cwd === 'string' ? s.cwd : undefined;
+    if (cwdScope && cwdScope !== '*' && cwd) {
+      if (!cwd.startsWith(cwdScope)) continue;
+    } else if (cwdScope && cwdScope !== '*' && !cwd) {
+      continue;
+    }
+
+    const commandMatch = s.command === '*' || normalizeCommand(s.command) === normalized;
+    if (!commandMatch) continue;
+
+    // Specificity: exact command > wildcard, cwd-scoped > no cwd
+    let specificity = 0;
+    if (s.command !== '*') specificity += 2;
+    if (cwdScope && cwdScope !== '*') specificity += 1;
+    if (specificity > bestSpecificity) {
+      bestSpecificity = specificity;
+      bestMatch = row;
+    }
   }
 
+  if (bestMatch) return bestMatch.grants as Grant[];
   return [];
 };
 
