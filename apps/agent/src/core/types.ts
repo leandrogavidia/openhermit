@@ -127,6 +127,11 @@ export interface WebConfig {
 
 export type ThinkingLevel = 'off' | 'minimal' | 'low' | 'medium' | 'high';
 
+export interface OwnerNotificationConfig {
+  channel: string;
+  session_id?: string;
+}
+
 export interface AgentRuntimeConfig {
   workspace_root: string;
   model: AgentModelConfig;
@@ -134,6 +139,7 @@ export interface AgentRuntimeConfig {
   exec?: import('./exec-backend.js').ExecConfig;
   web?: WebConfig;
   channels?: ChannelsConfig;
+  notifications?: OwnerNotificationConfig;
 }
 
 export type AgentConfig = AgentRuntimeConfig;

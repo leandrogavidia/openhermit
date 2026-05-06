@@ -528,7 +528,8 @@ export class AgentRunner implements SessionRuntime {
 
     const approvalGate = new ApprovalGate();
     const approvedCache = new Set<string>();
-    const approvalCallback = effectiveSpec.source.interactive
+    const isOwnerInteractive = effectiveSpec.source.interactive && resolvedUserRole === 'owner';
+    const approvalCallback = isOwnerInteractive
       ? this.makeApprovalCallback(effectiveSpec.sessionId, approvalGate)
       : undefined;
     const langfuseTurnContext: LangfuseTurnContext | undefined =
@@ -1099,6 +1100,55 @@ export class AgentRunner implements SessionRuntime {
     };
   }
 
+  private makeNotifyOwnerApproval(): ((requestId: string, resourceType: string, resourceKey: string, requesterId: string) => Promise<void>) | undefined {
+    if (this.channelOutbound.size === 0) return undefined;
+
+    return async (requestId, resourceType, resourceKey, requesterId) => {
+      try {
+        const config = await this.options.security.readConfig();
+        const notif = config.notifications;
+        if (!notif) return;
+
+        let targetSession: import('@openhermit/store').PersistedSessionIndexEntry | undefined;
+
+        if (notif.session_id) {
+          targetSession = await this.store.sessions.get(this.scope, notif.session_id) ?? undefined;
+        } else if (notif.channel) {
+          const members = await this.store.users.listByAgent(this.scope);
+          const ownerIds = new Set(members.filter((m) => m.role === 'owner').map((m) => m.userId));
+
+          const allSessions = await this.store.sessions.list(this.scope, { includeInactive: false });
+          const ownerSessions = allSessions
+            .filter((s) =>
+              s.source.platform === notif.channel
+              && s.userIds?.some((uid) => ownerIds.has(uid)),
+            )
+            .sort((a, b) => b.lastActivityAt.localeCompare(a.lastActivityAt));
+          targetSession = ownerSessions[0];
+        }
+
+        if (!targetSession) return;
+
+        const { resolveOutbound } = await import('./tools/session.js');
+        const outbound = resolveOutbound(targetSession, this.channelOutbound);
+        if (!outbound) return;
+
+        const text = `🔔 Approval required\n\n`
+          + `User \`${requesterId}\` needs approval for ${resourceType}/${resourceKey}.\n`
+          + `Request ID: ${requestId}\n\n`
+          + `Use approval_review to approve or reject.`;
+
+        await outbound.adapter.send({
+          sessionId: targetSession.sessionId,
+          to: outbound.to,
+          text,
+        });
+      } catch {
+        // Best-effort — don't break the tool call if notification fails.
+      }
+    };
+  }
+
   private makeToolCallCallback(session: RunnerSession): ToolCallCallback {
     return async (toolName, toolCallId, args) => {
       const ts = new Date().toISOString();
@@ -1531,6 +1581,7 @@ export class AgentRunner implements SessionRuntime {
         ...(input.approvedCache ? { approvedCache: input.approvedCache } : {}),
         ...(input.onToolCall ? { onToolCall: input.onToolCall } : {}),
         hookBus: this.bus,
+        ...(() => { const n = this.makeNotifyOwnerApproval(); return n ? { notifyOwnerApproval: n } : {}; })(),
       });
 
       // Connect to enabled MCP servers and add their toolsets
@@ -1577,6 +1628,7 @@ export class AgentRunner implements SessionRuntime {
     const agentId = this.scope.agentId;
     const userId = input.userId;
     const sessionId = input.contextSessionId;
+    const notifyOwner = this.makeNotifyOwnerApproval();
 
     const filteredTools = tools
       .filter((t: any) => {
@@ -1620,6 +1672,9 @@ export class AgentRunner implements SessionRuntime {
                   resourceType: 'tool',
                   resourceKey,
                 });
+                if (notifyOwner) {
+                  notifyOwner(request.id, 'tool', resourceKey, userId).catch(() => {});
+                }
                 return {
                   content: [{
                     type: 'text' as const,
@@ -1703,7 +1758,8 @@ export class AgentRunner implements SessionRuntime {
     const config = await this.options.security.readConfig();
     this.ensureProviderApiKey(config.model.provider);
 
-    const approvalCallback = session.spec.source.interactive
+    const isOwnerInteractive = session.spec.source.interactive && session.resolvedUserRole === 'owner';
+    const approvalCallback = isOwnerInteractive
       ? this.makeApprovalCallback(session.spec.sessionId, session.approvalGate)
       : undefined;
 

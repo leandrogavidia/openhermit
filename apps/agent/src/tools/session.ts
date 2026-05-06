@@ -232,7 +232,7 @@ type SessionSendArgs = Static<typeof SessionSendParams>;
  * Resolve the outbound channel adapter and recipient for a session.
  * Returns undefined if the session has no outbound-capable channel.
  */
-const resolveOutbound = (
+export const resolveOutbound = (
   session: { source: { platform?: string }; metadata?: Record<string, unknown> },
   channelOutbound: Map<string, ChannelOutbound>,
 ): { adapter: ChannelOutbound; to: string } | undefined => {

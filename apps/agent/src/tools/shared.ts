@@ -66,6 +66,9 @@ export interface ToolContext {
   /** Optional plugin/hook bus — when supplied, every tool call goes
    * through tool.before@v1 (vetoable) and tool.after@v1 (listener). */
   hookBus?: import('../events.js').AgentEventBus;
+  /** When set, called after an async ApprovalRequest is created to notify
+   *  the owner via their configured notification channel. */
+  notifyOwnerApproval?: (requestId: string, resourceType: string, resourceKey: string, requesterId: string) => Promise<void>;
 }
 
 /** Maximum characters for a single tool result text block (~256 KB). */
@@ -134,6 +137,10 @@ export const checkApprovalOrRequest = async (
     resourceKey,
     ...(scope ? { scope } : {}),
   });
+
+  if (context.notifyOwnerApproval) {
+    context.notifyOwnerApproval(request.id, resourceType, resourceKey, context.currentUserId).catch(() => {});
+  }
 
   throw new ApprovalRequiredError(request.id, resourceType, resourceKey);
 };
