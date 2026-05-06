@@ -18,6 +18,7 @@
  */
 
 import { SignJWT, jwtVerify, type JWTPayload } from 'jose';
+import { timingSafeEqual } from 'node:crypto';
 
 // ── Types ──────────────────────────────────────────────────────────────────
 
@@ -286,17 +287,36 @@ export const verifyJwt = async (
   token: string,
 ): Promise<JwtTokenPayload | null> => {
   try {
-    const { payload } = await jwtVerify(token, config.secret);
+    // Pin algorithm to prevent `alg:none` and algorithm-confusion attacks.
+    const { payload } = await jwtVerify(token, config.secret, { algorithms: ['HS256'] });
     if (!payload.sub || !payload.channel || !payload.channelUserId) {
       return null;
     }
     return payload as JwtTokenPayload;
-  } catch {
+  } catch (err) {
+    if (process.env.OPENHERMIT_LOG_AUTH === '1') {
+      console.debug('[auth] JWT verify failed:', (err as Error).message);
+    }
     return null;
   }
 };
 
 // ── Admin token ───────────────────────────────────────────────────────────
+
+/**
+ * Constant-time comparison of two strings. Returns false on length mismatch
+ * without leaking length info via timing.
+ */
+export const tokensMatch = (a: string, b: string): boolean => {
+  const aBuf = Buffer.from(a, 'utf8');
+  const bBuf = Buffer.from(b, 'utf8');
+  if (aBuf.length !== bBuf.length) {
+    // Still run a comparison against itself to keep timing roughly constant.
+    timingSafeEqual(aBuf, aBuf);
+    return false;
+  }
+  return timingSafeEqual(aBuf, bBuf);
+};
 
 export const verifyAdminToken = (
   adminToken: string | undefined,
@@ -304,7 +324,7 @@ export const verifyAdminToken = (
 ): boolean => {
   if (!adminToken) return false;
   if (!authorization?.startsWith('Bearer ')) return false;
-  return authorization.slice(7) === adminToken;
+  return tokensMatch(authorization.slice(7), adminToken);
 };
 
 // ── Auth resolution ────────────────────────────────────────────────────────
@@ -354,8 +374,8 @@ export const resolveAuth = async (
   }
 
   if (bearerToken) {
-    // 0. Admin token — full access
-    if (options.adminToken && bearerToken === options.adminToken) {
+    // 0. Admin token — full access (timing-safe comparison)
+    if (options.adminToken && tokensMatch(bearerToken, options.adminToken)) {
       return { mode: 'admin' as const, channel: 'admin', channelUserId: 'admin' };
     }
 

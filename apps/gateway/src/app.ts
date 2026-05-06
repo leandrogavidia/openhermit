@@ -60,6 +60,7 @@ import {
   type UserAuthProvider,
   resolveAuth,
   signJwt,
+  tokensMatch,
   verifyAdminToken,
 } from './auth.js';
 
@@ -644,7 +645,7 @@ export const createGatewayApp = (options: GatewayAppOptions): Hono => {
     // No JWT auth configured, but admin token exists — resolve admin auth for per-agent management routes
     const adminMiddleware = async (c: any, next: any) => {
       const authorization = c.req.header('authorization');
-      if (authorization?.startsWith('Bearer ') && authorization.slice(7) === adminToken) {
+      if (authorization?.startsWith('Bearer ') && tokensMatch(authorization.slice(7), adminToken)) {
         c.set('auth' as never, { mode: 'admin', channel: 'admin', channelUserId: 'admin' } as never);
       }
       await next();

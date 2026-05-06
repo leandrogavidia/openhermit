@@ -3,6 +3,7 @@ import { marked, type TokenizerExtension, type RendererExtension } from 'marked'
 import katex from 'katex';
 import 'katex/dist/katex.min.css';
 import remend from 'remend';
+import DOMPurify from 'dompurify';
 import { apiFetch } from '../api';
 
 // ─── KaTeX extension for marked ────────────────────────────────────────────
@@ -51,9 +52,19 @@ marked.use({ extensions: [mathBlock, mathInline] });
 
 // ─── Markdown renderer ─────────────────────────────────────────────────────
 
+// Allow common markdown/KaTeX output but strip <script>, event handlers, and
+// unsafe URI schemes. Agent output is untrusted; never inject raw HTML.
+const SANITIZE_CONFIG: DOMPurify.Config = {
+  ADD_TAGS: ['math', 'mrow', 'mi', 'mo', 'mn', 'ms', 'mtext', 'mfrac', 'msqrt', 'mroot', 'msub', 'msup', 'msubsup', 'munder', 'mover', 'munderover', 'mtable', 'mtr', 'mtd', 'semantics', 'annotation'],
+  ADD_ATTR: ['target', 'rel'],
+  FORBID_TAGS: ['style'],
+  FORBID_ATTR: ['onerror', 'onload', 'onclick', 'onmouseover', 'onfocus', 'onmouseenter', 'onmouseleave'],
+};
+
 const renderMarkdown = (text: string, streaming = false): string => {
   const src = streaming ? remend(text, { linkMode: 'text-only' }) : text;
-  return marked.parse(src, { async: false }) as string;
+  const raw = marked.parse(src, { async: false }) as string;
+  return DOMPurify.sanitize(raw, SANITIZE_CONFIG);
 };
 
 // ─── Types ─────────────────────────────────────────────────────────────────
