@@ -2,60 +2,12 @@ import { drizzle } from 'drizzle-orm/node-postgres';
 import { eq } from 'drizzle-orm';
 import pg from 'pg';
 
+import { readPath, writePath } from '@openhermit/shared';
+
 import type { AgentConfigStore } from '../interfaces.js';
 import * as schema from '../schema.js';
 import { agents } from '../schema.js';
 import type { DrizzleDb } from './index.js';
-
-/**
- * Walk a dot-path into a record. Returns undefined if any segment
- * is missing or the parent is not an object.
- */
-const readPath = (doc: Record<string, unknown> | null, dotPath: string): unknown => {
-  if (!doc) return undefined;
-  const segments = dotPath.split('.').filter(Boolean);
-  let cursor: unknown = doc;
-  for (const seg of segments) {
-    if (cursor === null || typeof cursor !== 'object') return undefined;
-    cursor = (cursor as Record<string, unknown>)[seg];
-  }
-  return cursor;
-};
-
-/**
- * Write a value at a dot-path inside a record, returning a new
- * top-level object. Creates missing intermediate objects.
- */
-const writePath = (
-  doc: Record<string, unknown> | null,
-  dotPath: string,
-  value: unknown,
-): Record<string, unknown> => {
-  const root: Record<string, unknown> = doc ? { ...doc } : {};
-  const segments = dotPath.split('.').filter(Boolean);
-  if (segments.length === 0) {
-    if (value === null || typeof value !== 'object') {
-      throw new Error('Cannot set the entire config document with setConfigPath; use setConfig.');
-    }
-    return value as Record<string, unknown>;
-  }
-  let cursor: Record<string, unknown> = root;
-  for (let i = 0; i < segments.length - 1; i++) {
-    const seg = segments[i]!;
-    const next = cursor[seg];
-    if (next === undefined || next === null || typeof next !== 'object') {
-      const created: Record<string, unknown> = {};
-      cursor[seg] = created;
-      cursor = created;
-    } else {
-      const cloned = { ...(next as Record<string, unknown>) };
-      cursor[seg] = cloned;
-      cursor = cloned;
-    }
-  }
-  cursor[segments[segments.length - 1]!] = value;
-  return root;
-};
 
 const parseJsonOrNull = (raw: string | null): Record<string, unknown> | null => {
   if (!raw) return null;

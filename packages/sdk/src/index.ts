@@ -464,6 +464,24 @@ export class GatewayClient {
 
   // --- admin stats ---
 
+  // --- gateway config (admin) ---
+
+  async getGatewayConfig(): Promise<{
+    config: Record<string, unknown>;
+    source: 'db' | 'file' | 'defaults' | 'memory';
+    persistent: boolean;
+  }> {
+    return this.getJson(`/api/admin/gateway/config`);
+  }
+
+  async putGatewayConfig(config: Record<string, unknown>): Promise<{
+    ok: boolean;
+    config: Record<string, unknown>;
+    restart_required: boolean;
+  }> {
+    return this.putJson(`/api/admin/gateway/config`, config);
+  }
+
   async getAdminStats(): Promise<{
     uptime: number;
     memory: { rss: number; heapUsed: number; heapTotal: number };

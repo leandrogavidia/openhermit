@@ -6,11 +6,15 @@ import { fileURLToPath } from 'node:url';
 
 import type { Command } from 'commander';
 import {
+  formatScalar,
   migrateLegacyGatewayLayout,
+  parseScalar,
+  readPath,
   resolveGatewayDir,
+  writePath,
 } from '@openhermit/shared';
 
-import { resolveGatewayUrl, handleError } from './shared.js';
+import { createGateway, resolveGatewayUrl, handleError } from './shared.js';
 
 // ── Helpers ────────────────────────────────────────────────────────────
 
@@ -226,6 +230,67 @@ export const registerGatewayCommand = (program: Command): void => {
           await removePidFile();
         }
         process.exit(1);
+      }
+    });
+
+  // --- config ---
+  const cfg = gw
+    .command('config')
+    .description('View and modify the gateway-level configuration (sandbox presets, CORS, etc.). Changes require a gateway restart.');
+
+  cfg
+    .command('show')
+    .description('Show the full gateway config as JSON')
+    .action(async () => {
+      try {
+        const gateway = createGateway();
+        const { config, source, persistent } = await gateway.getGatewayConfig();
+        console.log(JSON.stringify(config, null, 2));
+        console.error(`\n# source: ${source}${persistent ? '' : ' (not persisted — set DATABASE_URL)'}`);
+      } catch (error) {
+        handleError(error);
+      }
+    });
+
+  cfg
+    .command('get [key]')
+    .description('Get a config value by dot-path (omit key to print everything)')
+    .action(async (key?: string) => {
+      try {
+        const gateway = createGateway();
+        const { config } = await gateway.getGatewayConfig();
+        if (!key) {
+          console.log(JSON.stringify(config, null, 2));
+          return;
+        }
+        const value = readPath(config, key);
+        if (value === undefined) {
+          console.error(`Key not found: ${key}`);
+          process.exit(1);
+        }
+        console.log(formatScalar(value));
+      } catch (error) {
+        handleError(error);
+      }
+    });
+
+  cfg
+    .command('set <key> <value>')
+    .description('Set a config value by dot-path (e.g. cors.origin "https://example.com"). Restart the gateway to apply.')
+    .action(async (key: string, rawValue: string) => {
+      try {
+        const gateway = createGateway();
+        const { config } = await gateway.getGatewayConfig();
+        const value = parseScalar(rawValue);
+        const next = writePath(config, key, value);
+        const result = await gateway.putGatewayConfig(next);
+        console.log(`${key} = ${formatScalar(value)}`);
+        if (result.restart_required) {
+          console.log('\nRestart the gateway for the change to take effect:');
+          console.log('  hermit gateway stop && hermit gateway start');
+        }
+      } catch (error) {
+        handleError(error);
       }
     });
 };

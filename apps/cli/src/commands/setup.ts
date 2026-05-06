@@ -1,5 +1,5 @@
 import { execFile, spawn } from 'node:child_process';
-import { mkdir, readFile, writeFile, access } from 'node:fs/promises';
+import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import readline from 'node:readline';
 import crypto from 'node:crypto';
@@ -49,24 +49,6 @@ const resolveEnvPath = (): string =>
   // loadEnv() reads from this path on every CLI invocation, so all
   // \`hermit ...\` commands and the gateway/web they spawn pick it up.
   path.join(resolveGatewayDir(), '.env');
-
-const fileExists = (p: string): Promise<boolean> =>
-  access(p).then(() => true, () => false);
-
-const DEFAULT_GATEWAY_CONFIG = {
-  ui: true,
-  cors: { origin: '*' },
-  autoStartAgents: true,
-};
-
-const ensureGatewayConfig = async (): Promise<{ created: boolean; path: string }> => {
-  const dir = resolveGatewayDir();
-  const configPath = path.join(dir, 'gateway.json');
-  if (await fileExists(configPath)) return { created: false, path: configPath };
-  await mkdir(dir, { recursive: true });
-  await writeFile(configPath, JSON.stringify(DEFAULT_GATEWAY_CONFIG, null, 2) + '\n', 'utf8');
-  return { created: true, path: configPath };
-};
 
 const readEnvFile = async (envPath: string): Promise<Map<string, string>> => {
   const env = new Map<string, string>();
@@ -321,14 +303,11 @@ export const registerSetupCommand = (program: Command): void => {
         console.log('\nNo changes made.');
       }
 
-      // ── Step 4: gateway.json (minimal default if missing) ─────────
-
-      const cfg = await ensureGatewayConfig();
-      if (cfg.created) {
-        console.log(`✓ Wrote default gateway config: ${cfg.path}`);
-      } else {
-        console.log(`  Gateway config already present: ${cfg.path}`);
-      }
+      // Gateway config now lives in the DB (`meta` table, key
+      // `gateway.config`). The gateway uses defaults until edited via
+      // `hermit gateway config set ...` or the admin UI's Config tab.
+      // If a legacy gateway.json is still on disk, the gateway will
+      // migrate it into the DB on first boot.
 
       console.log('\nNext steps:');
       console.log('  hermit gateway start   Start the gateway (background)');

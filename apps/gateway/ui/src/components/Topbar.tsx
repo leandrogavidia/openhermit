@@ -11,6 +11,7 @@ const tabs: { id: Tab; label: string }[] = [
   { id: 'users', label: 'Users' },
   { id: 'stats', label: 'Stats' },
   { id: 'logs', label: 'Logs' },
+  { id: 'config', label: 'Config' },
 ];
 
 export function Topbar({

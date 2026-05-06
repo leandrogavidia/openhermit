@@ -1,5 +1,7 @@
 import fs from 'node:fs/promises';
 
+import type { DbMetaStore } from '@openhermit/store';
+
 export interface SandboxPreset {
   type: 'host' | 'docker' | 'e2b' | 'daytona';
   /** Backend-specific config (image/snapshot/template, agent_home, etc.). */
@@ -19,6 +21,8 @@ export interface GatewayConfig {
   autoProvisionSandbox: string | null;
 }
 
+export const META_KEY = 'gateway.config';
+
 const DEFAULT_PRESETS: Record<string, SandboxPreset> = {
   'docker-ubuntu': {
     type: 'docker',
@@ -33,6 +37,9 @@ const DEFAULT_CONFIG: GatewayConfig = {
   sandboxPresets: DEFAULT_PRESETS,
   autoProvisionSandbox: 'docker-ubuntu',
 };
+
+export const defaultGatewayConfig = (): GatewayConfig =>
+  JSON.parse(JSON.stringify(DEFAULT_CONFIG)) as GatewayConfig;
 
 const SUPPORTED_TYPES = new Set(['host', 'docker', 'e2b', 'daytona']);
 
@@ -86,22 +93,11 @@ const parseAutoProvision = (
 };
 
 /**
- * Load gateway.json from the given path, merging with defaults.
- * Returns defaults if the file doesn't exist.
+ * Validate a raw config object (e.g. from JSON file or DB) and return
+ * a fully-populated GatewayConfig with defaults applied.
  */
-export const loadGatewayConfig = async (filePath: string): Promise<GatewayConfig> => {
-  let raw: Record<string, unknown> = {};
-  try {
-    const content = await fs.readFile(filePath, 'utf8');
-    raw = JSON.parse(content) as Record<string, unknown>;
-  } catch (err) {
-    if ((err as NodeJS.ErrnoException).code !== 'ENOENT') {
-      throw new Error(`Failed to read gateway config: ${filePath}: ${err instanceof Error ? err.message : String(err)}`);
-    }
-    // File doesn't exist — use defaults
-  }
-
-  const presets = parsePresets(raw['sandboxPresets']) ?? DEFAULT_CONFIG.sandboxPresets;
+export const parseGatewayConfig = (raw: Record<string, unknown>): GatewayConfig => {
+  const presets = parsePresets(raw['sandboxPresets']) ?? defaultGatewayConfig().sandboxPresets;
   const autoProvision = 'autoProvisionSandbox' in raw
     ? parseAutoProvision(raw['autoProvisionSandbox'], presets)
     : DEFAULT_CONFIG.autoProvisionSandbox;
@@ -117,4 +113,70 @@ export const loadGatewayConfig = async (filePath: string): Promise<GatewayConfig
     sandboxPresets: presets,
     autoProvisionSandbox: autoProvision,
   };
+};
+
+const readFileIfExists = async (filePath: string): Promise<Record<string, unknown> | null> => {
+  try {
+    const content = await fs.readFile(filePath, 'utf8');
+    const parsed = JSON.parse(content) as unknown;
+    if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+      return parsed as Record<string, unknown>;
+    }
+    throw new Error(`gateway config at ${filePath} must be a JSON object`);
+  } catch (err) {
+    if ((err as NodeJS.ErrnoException).code === 'ENOENT') return null;
+    throw new Error(`Failed to read gateway config: ${filePath}: ${err instanceof Error ? err.message : String(err)}`);
+  }
+};
+
+/**
+ * Load gateway config, preferring the DB when a meta store is provided.
+ *
+ * Migration: if the DB has no entry but the file exists, copy the file
+ * contents into the DB and rename the file to `<file>.imported`. This is
+ * idempotent across boots.
+ *
+ * Without a meta store (e.g. no DATABASE_URL), falls back to file or defaults.
+ */
+export const loadGatewayConfig = async (
+  filePath: string,
+  options: { metaStore?: DbMetaStore } = {},
+): Promise<{ config: GatewayConfig; source: 'db' | 'file' | 'defaults' }> => {
+  const { metaStore } = options;
+
+  if (metaStore) {
+    const dbRaw = await metaStore.getJson<Record<string, unknown>>(META_KEY);
+    if (dbRaw && typeof dbRaw === 'object' && !Array.isArray(dbRaw)) {
+      return { config: parseGatewayConfig(dbRaw), source: 'db' };
+    }
+
+    // DB empty — try to migrate from file.
+    const fileRaw = await readFileIfExists(filePath);
+    if (fileRaw) {
+      // Validate before persisting to surface bad files loudly.
+      const parsed = parseGatewayConfig(fileRaw);
+      await metaStore.setJson(META_KEY, fileRaw);
+      await fs.rename(filePath, `${filePath}.imported`).catch(() => undefined);
+      return { config: parsed, source: 'db' };
+    }
+
+    return { config: defaultGatewayConfig(), source: 'defaults' };
+  }
+
+  const fileRaw = await readFileIfExists(filePath);
+  if (fileRaw) return { config: parseGatewayConfig(fileRaw), source: 'file' };
+  return { config: defaultGatewayConfig(), source: 'defaults' };
+};
+
+/**
+ * Validate-then-persist a full config document to the meta store.
+ * Returns the parsed config that was actually saved (with defaults applied).
+ */
+export const saveGatewayConfig = async (
+  metaStore: DbMetaStore,
+  raw: Record<string, unknown>,
+): Promise<GatewayConfig> => {
+  const parsed = parseGatewayConfig(raw);
+  await metaStore.setJson(META_KEY, raw);
+  return parsed;
 };

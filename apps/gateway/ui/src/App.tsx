@@ -12,6 +12,7 @@ import { SandboxesPanel } from './components/SandboxesPanel';
 import { UsersPanel } from './components/UsersPanel';
 import { StatsPanel } from './components/StatsPanel';
 import { LogsPanel } from './components/LogsPanel';
+import { GatewayConfigPanel } from './components/GatewayConfigPanel';
 
 export function App() {
   const [authed, setAuthed] = useState(false);
@@ -58,6 +59,7 @@ export function App() {
       {tab === 'users' && <UsersPanel />}
       {tab === 'stats' && <StatsPanel />}
       {tab === 'logs' && <LogsPanel />}
+      {tab === 'config' && <GatewayConfigPanel />}
     </div>
   );
 }

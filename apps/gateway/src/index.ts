@@ -21,6 +21,7 @@ import {
   FileSecretStore,
   DbSecretStore,
   DbAgentChannelStore,
+  DbMetaStore,
   runMigrations,
 } from '@openhermit/store';
 import { scanSkillDirectory } from '@openhermit/agent/skills';
@@ -105,11 +106,6 @@ export const main = async (): Promise<void> => {
     logStartup(`loaded ${loadedEnvCount} env var(s)`);
   }
 
-  // Load gateway.json.
-  const configPath = path.join(resolveGatewayDir(), DEFAULT_CONFIG_FILENAME);
-  const config = await loadGatewayConfig(configPath);
-  logStartup(`config loaded from ${configPath}`);
-
   const instances = new AgentInstanceManager();
 
   // Open agent store and skill store if DATABASE_URL is available.
@@ -124,6 +120,7 @@ export const main = async (): Promise<void> => {
   let sandboxStore: DbSandboxStore | undefined;
   let policyStore: DbPolicyStore | undefined;
   let approvalRequestStore: DbApprovalRequestStore | undefined;
+  let metaStore: DbMetaStore | undefined;
   if (process.env.DATABASE_URL) {
     try {
       await runMigrations();
@@ -138,6 +135,7 @@ export const main = async (): Promise<void> => {
       sandboxStore = await DbSandboxStore.open();
       policyStore = await DbPolicyStore.open();
       approvalRequestStore = await DbApprovalRequestStore.open();
+      metaStore = await DbMetaStore.open();
       if (process.env.OPENHERMIT_SECRETS_KEY) {
         agentChannelStore = await DbAgentChannelStore.open();
       }
@@ -146,6 +144,17 @@ export const main = async (): Promise<void> => {
       logStartup(`agent store unavailable: ${error instanceof Error ? error.message : String(error)}`);
     }
   }
+
+  // Load gateway config (DB-backed when metaStore is available; falls
+  // back to gateway.json + defaults otherwise). On first boot with a
+  // file present, the loader migrates it into the DB and renames the
+  // file to gateway.json.imported.
+  const configPath = path.join(resolveGatewayDir(), DEFAULT_CONFIG_FILENAME);
+  const { config, source: configSource } = await loadGatewayConfig(
+    configPath,
+    metaStore ? { metaStore } : {},
+  );
+  logStartup(`config loaded (source: ${configSource})`);
 
   // Auth configuration (secrets stay in env). ChannelRegistry is seeded
   // per-agent inside AgentInstanceManager.start() — every channel row
@@ -324,6 +333,7 @@ export const main = async (): Promise<void> => {
     ...(sandboxStore ? { sandboxStore } : {}),
     ...(policyStore ? { policyStore } : {}),
     ...(approvalRequestStore ? { approvalRequestStore } : {}),
+    ...(metaStore ? { metaStore } : {}),
     sandboxPresets: config.sandboxPresets,
     autoProvisionSandbox: config.autoProvisionSandbox,
     channelRegistry: channels,

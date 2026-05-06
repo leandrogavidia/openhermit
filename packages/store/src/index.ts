@@ -75,6 +75,7 @@ export {
   DbSandboxStore,
   DbPolicyStore,
   DbApprovalRequestStore,
+  DbMetaStore,
   generateSecretsKey,
   runMigrations,
 } from './impl/index.js';

@@ -31,6 +31,7 @@ import type {
   SandboxStore,
 } from '@openhermit/store';
 import type { SandboxPreset } from './config.js';
+import { defaultGatewayConfig, parseGatewayConfig, saveGatewayConfig, META_KEY } from './config.js';
 import type { ChannelRegistry } from './auth.js';
 import {
   ConflictError,
@@ -211,6 +212,7 @@ export interface GatewayAppOptions {
   sandboxStore?: SandboxStore | undefined;
   policyStore?: DbPolicyStore | undefined;
   approvalRequestStore?: DbApprovalRequestStore | undefined;
+  metaStore?: import('@openhermit/store').DbMetaStore | undefined;
   /** Named sandbox presets, keyed by preset name. */
   sandboxPresets?: Record<string, SandboxPreset> | undefined;
   /** Default preset to use when an agent is created without an explicit `sandbox` field. Null disables auto-provisioning. */
@@ -1416,6 +1418,60 @@ export const createGatewayApp = (options: GatewayAppOptions): Hono => {
     ) ?? 200;
     const entries = options.logBuffer?.tail(lines) ?? [];
     return c.json(entries);
+  });
+
+  // ── Gateway-level config ────────────────────────────────────────────
+  // Read/write the gateway's own settings (sandbox presets, CORS, etc.).
+  // Stored in the `meta` table under the key `gateway.config`. Changes
+  // do not take effect until the gateway is restarted.
+
+  app.get('/api/admin/gateway/config', async (c) => {
+    requireAdmin(c.req.header('authorization'));
+    const { metaStore } = options;
+    if (!metaStore) {
+      // No DB — surface the in-memory config (parsed at boot from file/defaults).
+      return c.json({
+        config: {
+          sandboxPresets: options.sandboxPresets ?? {},
+          autoProvisionSandbox: options.autoProvisionSandbox ?? null,
+          ...(options.corsOrigin ? { cors: { origin: options.corsOrigin } } : {}),
+        },
+        source: 'memory',
+        persistent: false,
+      });
+    }
+    const raw = await metaStore.getJson<Record<string, unknown>>(META_KEY);
+    const config = raw && typeof raw === 'object' && !Array.isArray(raw)
+      ? parseGatewayConfig(raw as Record<string, unknown>)
+      : defaultGatewayConfig();
+    return c.json({ config, source: raw ? 'db' : 'defaults', persistent: true });
+  });
+
+  app.put('/api/admin/gateway/config', async (c) => {
+    requireAdmin(c.req.header('authorization'));
+    const { metaStore } = options;
+    if (!metaStore) {
+      throw new OpenHermitError(
+        'Gateway config persistence requires DATABASE_URL.',
+        'not_configured',
+        500,
+      );
+    }
+    const body = await c.req.json().catch(() => undefined);
+    if (!body || typeof body !== 'object' || Array.isArray(body)) {
+      throw new ValidationError('Body must be a JSON object.');
+    }
+    if ((body as Record<string, unknown>).ui === false) {
+      throw new ValidationError(
+        'Refusing to disable the admin UI from the admin API. Edit the DB directly if you really need to.',
+      );
+    }
+    try {
+      const saved = await saveGatewayConfig(metaStore, body as Record<string, unknown>);
+      return c.json({ ok: true, config: saved, restart_required: true });
+    } catch (err) {
+      throw new ValidationError(err instanceof Error ? err.message : String(err));
+    }
   });
 
   app.get('/api/agents/:agentId/info', async (c) => {

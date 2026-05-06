@@ -6,6 +6,13 @@ export {
   resolveOpenHermitHome,
 } from './env.js';
 
+export {
+  readPath,
+  writePath,
+  parseScalar,
+  formatScalar,
+} from './json-path.js';
+
 export interface JsonErrorBody {
   error: {
     code: string;

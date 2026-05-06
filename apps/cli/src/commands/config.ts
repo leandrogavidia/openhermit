@@ -1,5 +1,7 @@
 import type { Command } from 'commander';
 
+import { readPath, writePath, parseScalar, formatScalar } from '@openhermit/shared';
+
 import { createGateway, handleError } from './shared.js';
 
 // ── Helpers ────────────────────────────────────────────────────────────
@@ -15,60 +17,9 @@ const resolveAgentId = (cmd: Command): string => {
   return process.env.OPENHERMIT_AGENT_ID ?? 'main';
 };
 
-/**
- * Get a nested value from an object by dot-separated path.
- * e.g. getPath({ model: { provider: 'anthropic' } }, 'model.provider') → 'anthropic'
- */
-const getPath = (obj: Record<string, unknown>, path: string): unknown => {
-  const parts = path.split('.');
-  let current: unknown = obj;
-  for (const part of parts) {
-    if (current === null || current === undefined || typeof current !== 'object') {
-      return undefined;
-    }
-    current = (current as Record<string, unknown>)[part];
-  }
-  return current;
-};
-
-/**
- * Set a nested value in an object by dot-separated path.
- * Creates intermediate objects as needed.
- */
-const setPath = (obj: Record<string, unknown>, path: string, value: unknown): void => {
-  const parts = path.split('.');
-  let current: Record<string, unknown> = obj;
-  for (let i = 0; i < parts.length - 1; i++) {
-    const part = parts[i]!;
-    if (typeof current[part] !== 'object' || current[part] === null) {
-      current[part] = {};
-    }
-    current = current[part] as Record<string, unknown>;
-  }
-  current[parts[parts.length - 1]!] = value;
-};
-
-/** Try to parse a string as JSON, otherwise return it as a string. */
-const parseValue = (raw: string): unknown => {
-  if (raw === 'true') return true;
-  if (raw === 'false') return false;
-  if (raw === 'null') return null;
-
-  const num = Number(raw);
-  if (!Number.isNaN(num) && raw.trim() !== '') return num;
-
-  if ((raw.startsWith('{') && raw.endsWith('}')) ||
-      (raw.startsWith('[') && raw.endsWith(']'))) {
-    try { return JSON.parse(raw); } catch { /* fall through */ }
-  }
-
-  return raw;
-};
-
-const formatValue = (value: unknown): string => {
-  if (typeof value === 'string') return value;
-  return JSON.stringify(value, null, 2);
-};
+const getPath = readPath;
+const formatValue = formatScalar;
+const parseValue = parseScalar;
 
 // ── Command ────────────────────────────────────────────────────────────
 
@@ -123,8 +74,8 @@ export const registerConfigCommand = (program: Command): void => {
         const gateway = createGateway();
         const config = await gateway.getAgentConfig(agentId);
         const value = parseValue(rawValue);
-        setPath(config, key, value);
-        await gateway.putAgentConfig(agentId, config);
+        const next = writePath(config, key, value);
+        await gateway.putAgentConfig(agentId, next);
         console.log(`${key} = ${formatValue(value)}`);
       } catch (error) {
         handleError(error);
@@ -327,8 +278,8 @@ export const registerConfigCommand = (program: Command): void => {
         const gateway = createGateway();
         const policy = await gateway.getAgentSecurity(agentId);
         const value = parseValue(rawValue);
-        setPath(policy, key, value);
-        await gateway.putAgentSecurity(agentId, policy);
+        const next = writePath(policy, key, value);
+        await gateway.putAgentSecurity(agentId, next);
         console.log(`${key} = ${formatValue(value)}`);
       } catch (error) {
         handleError(error);

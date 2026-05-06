@@ -59,14 +59,18 @@ const buildChecks = (): Check[] => {
       },
     },
     {
-      label: 'Gateway config',
+      label: 'Legacy gateway.json',
       run: async () => {
+        // gateway.json is no longer required — config now lives in
+        // the DB `meta` table. If a stale file is still around, the
+        // gateway will migrate it on next boot. Surface its presence
+        // so operators know.
         const configPath = path.join(resolveGatewayDir(), 'gateway.json');
         try {
           await access(configPath);
-          return { ok: true, detail: configPath };
+          return { ok: true, detail: `${configPath} present (will migrate to DB on next boot)` };
         } catch {
-          return { ok: false, detail: `${configPath} not found` };
+          return { ok: true, detail: 'none (config now in DB meta table)' };
         }
       },
     },
