@@ -6,7 +6,6 @@ import {
   type Toolset,
   type ToolContext,
   asTextContent,
-  ensureAutonomyAllows,
   formatJson,
 } from './shared.js';
 import { consumeLinkToken, issueLinkToken } from '../identity-link-tokens.js';
@@ -88,8 +87,6 @@ export const createUserIdentityLinkTool = (context: ToolContext): PolicyAwareToo
   description: 'Link a channel identity to a user. If the identity already belongs to another user, it will be re-linked to the target user.',
   parameters: UserIdentityLinkParams,
   execute: async (_toolCallId, args: UserIdentityLinkArgs) => {
-    ensureAutonomyAllows(context.security, 'user_identity_link');
-
     if (!context.userStore || !context.storeScope) {
       throw new ValidationError('user_identity_link is unavailable: no user store is configured.');
     }
@@ -129,8 +126,6 @@ export const createUserIdentityUnlinkTool = (context: ToolContext): PolicyAwareT
   description: 'Remove a channel identity link from its user.',
   parameters: UserIdentityUnlinkParams,
   execute: async (_toolCallId, args: UserIdentityUnlinkArgs) => {
-    ensureAutonomyAllows(context.security, 'user_identity_unlink');
-
     if (!context.userStore || !context.storeScope) {
       throw new ValidationError('user_identity_unlink is unavailable: no user store is configured.');
     }
@@ -158,8 +153,6 @@ export const createUserRoleSetTool = (context: ToolContext): PolicyAwareTool<typ
   description: 'Change a user\'s role (owner, user, or guest).',
   parameters: UserRoleSetParams,
   execute: async (_toolCallId, args: UserRoleSetArgs) => {
-    ensureAutonomyAllows(context.security, 'user_role_set');
-
     if (!context.userStore || !context.storeScope) {
       throw new ValidationError('user_role_set is unavailable: no user store is configured.');
     }
@@ -190,8 +183,6 @@ export const createUserMergeTool = (context: ToolContext): PolicyAwareTool<typeo
   description: 'Merge one user into another. All identities from the source user are moved to the target. The source user is marked as merged and excluded from listings.',
   parameters: UserMergeParams,
   execute: async (_toolCallId, args: UserMergeArgs) => {
-    ensureAutonomyAllows(context.security, 'user_merge');
-
     if (!context.userStore || !context.storeScope) {
       throw new ValidationError('user_merge is unavailable: no user store is configured.');
     }
@@ -259,8 +250,6 @@ export const createIdentityLinkRequestTool = (
     'Generate a short-lived link token so the user can connect their identity across channels (e.g. link Telegram + web as one user). Call this when the user wants to link accounts, merge identities, or be recognised across platforms. Token is single-use and expires in ~10 minutes. The user must then run identity_link_confirm with this token from a different channel.',
   parameters: IdentityLinkRequestParams,
   execute: async () => {
-    ensureAutonomyAllows(context.security, 'identity_link_request');
-
     if (!context.currentUserId) {
       throw new ValidationError('identity_link_request requires a resolved user identity.');
     }
@@ -293,8 +282,6 @@ export const createIdentityLinkConfirmTool = (
     'Redeem a token issued by identity_link_request on another channel. Links the current channel identity to the same user. Must be invoked from a different channel than the one that issued the token.',
   parameters: IdentityLinkConfirmParams,
   execute: async (_toolCallId, args: IdentityLinkConfirmArgs) => {
-    ensureAutonomyAllows(context.security, 'identity_link_confirm');
-
     if (!context.userStore) {
       throw new ValidationError('identity_link_confirm is unavailable: no user store is configured.');
     }

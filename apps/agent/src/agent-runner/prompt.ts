@@ -117,7 +117,7 @@ export const buildSystemPrompt = async (
     );
   }
 
-  const runtimeLines = [`Autonomy level: ${security.getAutonomyLevel()}`];
+  const runtimeLines: string[] = [];
   if (currentUser?.sessionId) {
     runtimeLines.push(`Current session: \`${currentUser.sessionId}\``);
   }

@@ -6,7 +6,6 @@ import {
   type ToolContext,
   asTextContent,
   checkApprovalOrRequest,
-  ensureAutonomyAllows,
   formatJson,
 } from './shared.js';
 import {
@@ -44,8 +43,6 @@ export const createSandboxExecTool = (
   description: buildExecDescription(context),
   parameters: SandboxExecParams,
   execute: async (_toolCallId, args: SandboxExecArgs) => {
-    ensureAutonomyAllows(context.security, 'exec');
-
     if (!context.execBackendManager) {
       return {
         content: asTextContent(

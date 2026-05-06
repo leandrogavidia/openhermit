@@ -743,8 +743,6 @@ export const createGatewayApp = (options: GatewayAppOptions): Hono => {
       );
     }
     const templateSecurity: Record<string, unknown> = {
-      autonomy_level: 'full',
-      require_approval_for: [],
       ...(body.access ? { access: body.access } : {}),
     };
 

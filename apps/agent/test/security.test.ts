@@ -1,20 +1,16 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
-import { NotFoundError, ValidationError } from '@openhermit/shared';
+import { NotFoundError } from '@openhermit/shared';
 
 import { createSecurityFixture } from './helpers.js';
 
-test('AgentSecurity loads the default policy and approval list', async (t) => {
-  const { security } = await createSecurityFixture(t, {
-    security: { autonomy_level: 'supervised', require_approval_for: ['container_start'] },
-  });
+test('AgentSecurity loads the default policy', async (t) => {
+  const { security } = await createSecurityFixture(t);
 
   await security.load();
 
-  assert.equal(security.getAutonomyLevel(), 'supervised');
-  assert.equal(security.requiresApproval('container_start'), true);
-  assert.equal(security.requiresApproval('exec'), false);
+  assert.equal(security.getAccessLevel(), 'public');
   assert.deepEqual(security.listSecretNames(), []);
 });
 
@@ -41,15 +37,16 @@ test('AgentSecurity resolves configured secrets', async (t) => {
   );
 });
 
-test('AgentSecurity rejects invalid autonomy levels', async (t) => {
+test('AgentSecurity loads policy with legacy autonomy_level gracefully', async (t) => {
   const { security, configStore, agentId } = await createSecurityFixture(t);
 
   await configStore.setSecurity(agentId, {
-    autonomy_level: 'dangerous',
-    require_approval_for: [],
+    autonomy_level: 'readonly',
+    require_approval_for: ['exec'],
   });
 
-  await assert.rejects(() => security.load(), ValidationError);
+  await security.load();
+  assert.equal(security.getAccessLevel(), 'public');
 });
 
 test('AgentSecurity scaffolds and reads the default runtime config', async (t) => {
@@ -58,7 +55,7 @@ test('AgentSecurity scaffolds and reads the default runtime config', async (t) =
   const config = await security.readConfig();
 
   assert.equal(config.workspace_root, root);
-  assert.equal(config.model.provider, 'anthropic');
+  assert.equal(config.model.provider, 'openrouter');
   assert.ok(config.exec, 'exec config should be populated by default');
   assert.equal(config.web?.provider, 'defuddle');
   assert.equal(config.memory.introspection?.enabled, true);
@@ -83,13 +80,11 @@ test('AgentSecurity writeConfig persists into the config store', async (t) => {
 test('AgentSecurity readSecurityPolicy / writeSecurityPolicy round-trip', async (t) => {
   const { security } = await createSecurityFixture(t);
   const policy = await security.readSecurityPolicy();
-  assert.equal(typeof policy.autonomy_level, 'string');
+  assert.equal(typeof policy, 'object');
 
   await security.writeSecurityPolicy({
-    autonomy_level: 'readonly',
-    require_approval_for: ['exec'],
+    access: 'private',
   });
   const updated = await security.readSecurityPolicy();
-  assert.equal(updated.autonomy_level, 'readonly');
-  assert.deepEqual(updated.require_approval_for, ['exec']);
+  assert.equal(updated.access, 'private');
 });

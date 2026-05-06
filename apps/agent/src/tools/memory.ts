@@ -6,7 +6,6 @@ import {
   type Toolset,
   type ToolContext,
   asTextContent,
-  ensureAutonomyAllows,
   formatJson,
 } from './shared.js';
 import { type Grant, type Principal, buildPrincipal, canAccess } from '../core/policy.js';
@@ -238,8 +237,6 @@ export const createMemoryAddTool = ({
     'Create or upsert a memory entry. Use semantic keys following the namespacing rules (e.g. "agent/name", "user/{userId}/preferences", "project/conventions"), or omit the key for auto-generated ones. Save proactively when the user shares preferences, corrects you, or reveals project decisions. Use memory_recall first to check for existing entries and avoid duplicates.',
   parameters: MemoryAddParams,
   execute: async (_toolCallId, args: MemoryAddArgs) => {
-    ensureAutonomyAllows(security, 'memory_add');
-
     if (!memoryProvider || !storeScope) {
       throw new ValidationError('memory_add is unavailable: no memory provider is configured.');
     }
@@ -286,8 +283,6 @@ export const createMemoryUpdateTool = ({
     'Update an existing memory entry by key. Use memory_get first to read the current content before updating.',
   parameters: MemoryUpdateParams,
   execute: async (_toolCallId, args: MemoryUpdateArgs) => {
-    ensureAutonomyAllows(security, 'memory_update');
-
     if (!memoryProvider || !storeScope) {
       throw new ValidationError('memory_update is unavailable: no memory provider is configured.');
     }
@@ -330,8 +325,6 @@ export const createMemoryDeleteTool = ({
     'Delete a memory entry by key.',
   parameters: MemoryDeleteParams,
   execute: async (_toolCallId, args: MemoryDeleteArgs) => {
-    ensureAutonomyAllows(security, 'memory_delete');
-
     if (!memoryProvider || !storeScope) {
       throw new ValidationError('memory_delete is unavailable: no memory provider is configured.');
     }
@@ -373,8 +366,6 @@ export const createMemorySetGrantsTool = ({
     'Set access grants on a memory entry. Only the owner can change who can read a memory. Empty grants = open to everyone.',
   parameters: MemorySetGrantsParams,
   execute: async (_toolCallId, args: MemorySetGrantsArgs) => {
-    ensureAutonomyAllows(security, 'memory_set_grants');
-
     if (!memoryProvider || !storeScope) {
       throw new ValidationError('memory_set_grants is unavailable: no memory provider is configured.');
     }

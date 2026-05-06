@@ -7,7 +7,6 @@ import {
   type ToolContext,
   asTextContent,
   formatJson,
-  ensureAutonomyAllows,
 } from './shared.js';
 
 // ── Parameters ──────────────────────────────────────────────────────
@@ -87,7 +86,6 @@ export const createPolicySetTool = (context: ToolContext): PolicyAwareTool<typeo
     + 'Fixed tools (like user management) cannot be overridden.',
   parameters: PolicySetParams,
   execute: async (_id, args: PolicySetArgs) => {
-    ensureAutonomyAllows(context.security, 'policy_set');
     if (!context.policyStore || !context.storeScope) {
       throw new ValidationError('policy_set is unavailable: no policy store is configured.');
     }
@@ -119,7 +117,6 @@ export const createPolicyDeleteTool = (context: ToolContext): PolicyAwareTool<ty
   description: 'Remove a custom policy, reverting a resource to its built-in default.',
   parameters: PolicyDeleteParams,
   execute: async (_id, args: PolicyDeleteArgs) => {
-    ensureAutonomyAllows(context.security, 'policy_delete');
     if (!context.policyStore || !context.storeScope) {
       throw new ValidationError('policy_delete is unavailable: no policy store is configured.');
     }

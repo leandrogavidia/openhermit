@@ -187,8 +187,10 @@ export interface ChannelTokenEntry {
 }
 
 export interface SecurityPolicy {
-  autonomy_level: AutonomyLevel;
-  require_approval_for: string[];
+  /** @deprecated Use policy rows with effect instead. Kept for backward compatibility. */
+  autonomy_level?: AutonomyLevel;
+  /** @deprecated Use policy rows with effect='require_approval' instead. */
+  require_approval_for?: string[];
   access?: AgentAccessLevel;
   access_token?: string;
   /** Per-channel API tokens for external channel adapters. */
@@ -233,7 +235,4 @@ export interface ContainerProcessResult {
   parsedOutput?: unknown;
 }
 
-export const DEFAULT_SECURITY_POLICY: SecurityPolicy = {
-  autonomy_level: 'supervised',
-  require_approval_for: [],
-};
+export const DEFAULT_SECURITY_POLICY: SecurityPolicy = {};

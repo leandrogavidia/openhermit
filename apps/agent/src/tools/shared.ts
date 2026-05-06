@@ -17,33 +17,6 @@ export interface Toolset {
   tools: PolicyAwareTool[];
 }
 
-const READONLY_BLOCKED_TOOLS = new Set([
-  'memory_add',
-  'memory_update',
-  'memory_delete',
-  'working_memory_update',
-  'exec',
-  'file_write',
-  'file_edit',
-  'file_delete',
-  'instruction_update',
-  'session_description_update',
-  'session_send',
-  'user_identity_link',
-  'user_identity_unlink',
-  'user_role_set',
-  'user_merge',
-  'identity_link_request',
-  'identity_link_confirm',
-  'schedule_create',
-  'schedule_update',
-  'schedule_delete',
-  'schedule_trigger',
-  'memory_set_grants',
-  'policy_set',
-  'policy_delete',
-]);
-
 export type ApprovalDecision = 'approved' | 'rejected' | 'timed_out' | 'cancelled';
 
 export type ApprovalCallback = (
@@ -113,18 +86,6 @@ export const asTextContent = (text: string) => {
 
 export const formatJson = (value: unknown): string =>
   `${JSON.stringify(value, null, 2)}\n`;
-
-export const ensureAutonomyAllows = (
-  security: AgentSecurity,
-  toolName: string,
-): void => {
-  if (
-    security.getAutonomyLevel() === 'readonly' &&
-    READONLY_BLOCKED_TOOLS.has(toolName)
-  ) {
-    throw new ValidationError(`${toolName} is not allowed in readonly mode.`);
-  }
-};
 
 export class ApprovalRequiredError extends Error {
   constructor(

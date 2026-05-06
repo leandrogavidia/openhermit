@@ -58,12 +58,7 @@ const withMockFetch = async (mockFetch: FetchImpl, fn: () => Promise<void>): Pro
 };
 
 test('withApproval forwards signal and onUpdate to the wrapped tool', async (t) => {
-  const { security } = await createSecurityFixture(t, {
-    security: {
-      autonomy_level: 'supervised',
-      require_approval_for: ['dangerous_tool'],
-    },
-  });
+  const { security } = await createSecurityFixture(t);
   await security.load();
 
   const Params = Type.Object({
@@ -144,74 +139,9 @@ test('withApproval forwards signal and onUpdate to the wrapped tool', async (t) 
   assert.deepEqual(result.details, { status: 'done' });
 });
 
-test('withApproval distinguishes timeout from explicit rejection', async (t) => {
-  const { security } = await createSecurityFixture(t, {
-    security: {
-      autonomy_level: 'supervised',
-      require_approval_for: ['dangerous_tool'],
-    },
-  });
-  await security.load();
-
-  const Params = Type.Object({
-    value: Type.String(),
-  });
-
-  const tool: AgentTool<typeof Params, { status: string }> = {
-    name: 'dangerous_tool',
-    label: 'Dangerous Tool',
-    description: 'Tool used to verify approval decisions.',
-    parameters: Params,
-    execute: async () => {
-      throw new Error('should not execute when approval is not granted');
-    },
-  };
-
-  const requestedCalls: string[] = [];
-  const startedCalls: string[] = [];
-
-  const timedOut = withApproval(
-    tool,
-    security,
-    async () => 'timed_out',
-    async (toolName) => {
-      requestedCalls.push(toolName);
-    },
-    async (toolName) => {
-      startedCalls.push(toolName);
-    },
-  );
-  const rejected = withApproval(
-    tool,
-    security,
-    async () => 'rejected',
-    async (toolName) => {
-      requestedCalls.push(toolName);
-    },
-    async (toolName) => {
-      startedCalls.push(toolName);
-    },
-  );
-
-  const timedOutResult = await timedOut.execute('call-timeout', { value: 'payload' });
-  const rejectedResult = await rejected.execute('call-rejected', { value: 'payload' });
-
-  assert.match(getFirstText(timedOutResult), /timed out waiting for user approval/);
-  assert.deepEqual(timedOutResult.details, {
-    rejected: true,
-    toolName: 'dangerous_tool',
-    approvalStatus: 'timed_out',
-  });
-
-  assert.match(getFirstText(rejectedResult), /rejected by the user/);
-  assert.deepEqual(rejectedResult.details, {
-    rejected: true,
-    toolName: 'dangerous_tool',
-    approvalStatus: 'rejected',
-  });
-  assert.deepEqual(requestedCalls, ['dangerous_tool', 'dangerous_tool']);
-  assert.deepEqual(startedCalls, []);
-});
+// Old test "withApproval distinguishes timeout from explicit rejection" removed:
+// The security-based approval flow (autonomy_level + require_approval_for) has been
+// replaced by the policy-based require_approval effect + ApprovalRequest flow.
 
 test('memory_add stores entry, memory_recall finds it, and memory_get returns full content', async (t) => {
   const { workspace, security } = await createSecurityFixture(t, {
@@ -328,34 +258,8 @@ test('memory_get rejects unknown IDs', async (t) => {
   );
 });
 
-test('memory_add is blocked in readonly mode', async (t) => {
-  const { workspace, security } = await createSecurityFixture(t, {
-    secrets: { ANTHROPIC_API_KEY: 'key' },
-    security: {
-      autonomy_level: 'readonly',
-      require_approval_for: [],
-    },
-  });
-  await security.load();
-
-  const store = await DbInternalStateStore.open();
-  t.after(() => store.close());
-  const memoryProvider = store.memories;
-  const tools = createBuiltInTools({
-    security,
-    memoryProvider,
-    storeScope: standaloneScope,
-  });
-  const addTool = findTool(tools, 'memory_add');
-
-  await assert.rejects(
-    () =>
-      addTool.execute('call-memory-readonly', {
-        content: 'Remember this forever.',
-      }),
-    ValidationError,
-  );
-});
+// Old test "memory_add is blocked in readonly mode" removed:
+// The readonly autonomy_level has been replaced by policy rows with effect='deny'.
 
 test('web_fetch returns status headers and body for a successful GET', async (t) => {
   const { workspace, security } = await createSecurityFixture(t, {
@@ -385,51 +289,8 @@ test('web_fetch returns status headers and body for a successful GET', async (t)
   );
 });
 
-test('web_fetch is still wrapped by approval callbacks in createBuiltInTools', async (t) => {
-  const { workspace, security } = await createSecurityFixture(t, {
-    secrets: { ANTHROPIC_API_KEY: 'key' },
-    security: {
-      autonomy_level: 'supervised',
-      require_approval_for: ['web_fetch'],
-    },
-  });
-  await security.load();
-
-  const approvalCalls: Array<{ toolName: string; toolCallId: string; args: unknown }> = [];
-  const requestedCalls: Array<{ toolName: string; toolCallId: string; args: unknown }> = [];
-  const startedCalls: Array<{ toolName: string; toolCallId: string; args: unknown }> = [];
-
-  const tools = createBuiltInTools({
-    security,
-    webProvider: defaultWebProvider,
-    approvalCallback: async (toolName, toolCallId, args) => {
-      approvalCalls.push({ toolName, toolCallId, args });
-      return 'approved';
-    },
-    onToolCall: async (toolName, toolCallId, args) => {
-      requestedCalls.push({ toolName, toolCallId, args });
-      startedCalls.push({ toolName, toolCallId, args });
-    },
-  });
-  const tool = findTool(tools, 'web_fetch');
-
-  await withMockFetch(makeFetchMock(200, 'ok'), async () => {
-    const result = await tool.execute('call-web-2', {
-      url: 'https://example.com/approved',
-      output: 'raw',
-    });
-    assert.match(getFirstText(result), /ok/);
-  });
-
-  const expectedCall = {
-    toolName: 'web_fetch',
-    toolCallId: 'call-web-2',
-    args: { url: 'https://example.com/approved', output: 'raw' },
-  };
-  assert.deepEqual(approvalCalls, [expectedCall]);
-  assert.deepEqual(requestedCalls, [expectedCall]);
-  assert.deepEqual(startedCalls, [expectedCall]);
-});
+// Old test "web_fetch is still wrapped by approval callbacks" removed:
+// The security-based approval callback flow has been replaced by policy-based approvals.
 
 test('web_fetch truncates large responses at max_bytes', async (t) => {
   const { workspace, security } = await createSecurityFixture(t, {
@@ -640,30 +501,8 @@ test('instruction_update stores an entry and verifies via store', async (t) => {
   assert.match(entry.content, /TestBot/);
 });
 
-test('instruction_update is blocked in readonly mode', async (t) => {
-  const { workspace, security } = await createSecurityFixture(t, {
-    secrets: { ANTHROPIC_API_KEY: 'key' },
-    security: { autonomy_level: 'readonly' },
-  });
-  await security.load();
-
-  const stateStore = await DbInternalStateStore.open();
-  t.after(() => stateStore.close());
-
-  const tools = createBuiltInTools({
-    security,
-    instructionStore: stateStore.instructions,
-    storeScope: { agentId: 'agent-test' },
-  });
-
-  await assert.rejects(
-    () => findTool(tools, 'instruction_update').execute('call-id-6', {
-      key: 'identity',
-      content: 'should be blocked',
-    }),
-    ValidationError,
-  );
-});
+// Old test "instruction_update is blocked in readonly mode" removed:
+// The readonly autonomy_level has been replaced by policy rows with effect='deny'.
 
 // ── Session tool access control tests ──────────────────────────────
 

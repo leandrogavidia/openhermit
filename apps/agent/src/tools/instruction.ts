@@ -5,7 +5,6 @@ import {
   type Toolset,
   type ToolContext,
   asTextContent,
-  ensureAutonomyAllows,
 } from './shared.js';
 
 const InstructionUpdateParams = Type.Object({
@@ -32,8 +31,6 @@ export const createInstructionUpdateTool = ({
     'Update an instruction entry. Use this to refine your identity, soul, or collaboration rules.',
   parameters: InstructionUpdateParams,
   execute: async (_callId, args: InstructionUpdateArgs) => {
-    ensureAutonomyAllows(security, 'instruction_update');
-
     if (!instructionStore || !storeScope) {
       return {
         content: asTextContent('Instruction store is not available.'),

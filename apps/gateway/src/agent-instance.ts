@@ -154,7 +154,7 @@ export class AgentInstanceManager {
       });
     }
 
-    log(`[${agentId}] autonomy: ${security.getAutonomyLevel()}`);
+    log(`[${agentId}] access: ${security.getAccessLevel()}`);
 
     // 4. Optional Langfuse tracing
     const langfuse = createLangfuseClientFromEnv({ logger: log });

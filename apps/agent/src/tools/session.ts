@@ -8,7 +8,6 @@ import {
   type ToolContext,
   asTextContent,
   formatJson,
-  ensureAutonomyAllows,
 } from './shared.js';
 
 // ── Parameters ──────────────────────────────────────────────────────
@@ -263,8 +262,6 @@ export const createSessionSendTool = (context: ToolContext): PolicyAwareTool<typ
     + 'Use session_list to find sessions and their channel information first.',
   parameters: SessionSendParams,
   execute: async (_toolCallId, args: SessionSendArgs) => {
-    ensureAutonomyAllows(context.security, 'session_send');
-
     if (!context.sessionStore || !context.storeScope) {
       throw new ValidationError('session_send is unavailable: no session store is configured.');
     }

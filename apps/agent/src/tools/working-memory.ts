@@ -1,6 +1,6 @@
 import { Type, type Static } from '@mariozechner/pi-ai';
 
-import { type PolicyAwareTool, type ToolContext, asTextContent, ensureAutonomyAllows } from './shared.js';
+import { type PolicyAwareTool, type ToolContext, asTextContent } from './shared.js';
 
 const WorkingMemoryUpdateParams = Type.Object({
   content: Type.String({
@@ -26,8 +26,6 @@ export const createWorkingMemoryUpdateTool = (
     + 'The content you write here replaces the previous content entirely.',
   parameters: WorkingMemoryUpdateParams,
   execute: async (_toolCallId, args: WorkingMemoryUpdateArgs) => {
-    ensureAutonomyAllows(context.security, 'working_memory_update');
-
     const { messageStore, storeScope, sessionId } = context;
 
     if (!messageStore || !storeScope || !sessionId) {

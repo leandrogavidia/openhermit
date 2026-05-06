@@ -7,7 +7,6 @@ import {
   type ToolContext,
   asTextContent,
   checkApprovalOrRequest,
-  ensureAutonomyAllows,
   formatJson,
 } from './shared.js';
 import type { ExecBackend, FileWriteMode } from '../core/index.js';
@@ -147,7 +146,6 @@ export const createFileReadTool = (context: ToolContext): PolicyAwareTool<typeof
     'Read a file from a sandbox by absolute path. Use offset (1-based line number) and limit (line count) to read a range of lines from large files. Returns text by default; use encoding=base64 for binary files. Hard cap of 5 MiB.',
   parameters: FileReadParams,
   execute: async (_id, args: FileReadArgs) => {
-    ensureAutonomyAllows(context.security, 'file_read');
     const backend = resolveBackend(context, args.sandbox);
     await checkFilePath(context, backend.id, 'read', args.path);
     const { data } = await backend.files.read(args.path);
@@ -202,7 +200,6 @@ export const createFileWriteTool = (context: ToolContext): PolicyAwareTool<typeo
     "Write a file in a sandbox. Default mode is 'overwrite' (atomic write-and-rename). Use 'create' to fail if the file already exists, or 'append' to add to the end. Parent directories are created as needed.",
   parameters: FileWriteParams,
   execute: async (_id, args: FileWriteArgs) => {
-    ensureAutonomyAllows(context.security, 'file_write');
     const backend = resolveBackend(context, args.sandbox);
     await checkFilePath(context, backend.id, 'write', args.path);
     const mode: FileWriteMode = args.mode ?? 'overwrite';
@@ -224,7 +221,6 @@ export const createFileListTool = (context: ToolContext): PolicyAwareTool<typeof
   description: 'List entries (files + subdirectories) in a sandbox directory.',
   parameters: FileListParams,
   execute: async (_id, args: FileListArgs) => {
-    ensureAutonomyAllows(context.security, 'file_list');
     const backend = resolveBackend(context, args.sandbox);
     await checkFilePath(context, backend.id, 'read', args.path);
     const entries = await backend.files.list(args.path);
@@ -242,7 +238,6 @@ export const createFileStatTool = (context: ToolContext): PolicyAwareTool<typeof
   description: 'Inspect a path in a sandbox: type (file/directory), size, last-modified time. Returns null if missing.',
   parameters: FileStatParams,
   execute: async (_id, args: FileStatArgs) => {
-    ensureAutonomyAllows(context.security, 'file_stat');
     const backend = resolveBackend(context, args.sandbox);
     await checkFilePath(context, backend.id, 'read', args.path);
     const stat = await backend.files.stat(args.path);
@@ -261,7 +256,6 @@ export const createFileEditTool = (context: ToolContext): PolicyAwareTool<typeof
     'Find and replace text in a file. By default replaces only the first occurrence; set replace_all=true to replace every match. The find_text must match exactly (not a regex). Fails if find_text is not found.',
   parameters: FileEditParams,
   execute: async (_id, args: FileEditArgs) => {
-    ensureAutonomyAllows(context.security, 'file_edit');
     const backend = resolveBackend(context, args.sandbox);
     await checkFilePath(context, backend.id, 'write', args.path);
     const { data } = await backend.files.read(args.path);
@@ -302,7 +296,6 @@ export const createFileDeleteTool = (context: ToolContext): PolicyAwareTool<type
   description: 'Delete a single file in a sandbox. Refuses to delete directories (no recursion).',
   parameters: FileDeleteParams,
   execute: async (_id, args: FileDeleteArgs) => {
-    ensureAutonomyAllows(context.security, 'file_delete');
     const backend = resolveBackend(context, args.sandbox);
     await checkFilePath(context, backend.id, 'write', args.path);
     await backend.files.delete(args.path);

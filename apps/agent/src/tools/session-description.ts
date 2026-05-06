@@ -1,6 +1,6 @@
 import { Type, type Static } from '@mariozechner/pi-ai';
 
-import { type PolicyAwareTool, type ToolContext, asTextContent, ensureAutonomyAllows } from './shared.js';
+import { type PolicyAwareTool, type ToolContext, asTextContent } from './shared.js';
 
 const SessionDescriptionUpdateParams = Type.Object({
   description: Type.String({
@@ -24,8 +24,6 @@ export const createSessionDescriptionUpdateTool = (
     + 'Keep it short, specific, and descriptive of what the session is about.',
   parameters: SessionDescriptionUpdateParams,
   execute: async (_toolCallId, args: SessionDescriptionUpdateArgs) => {
-    ensureAutonomyAllows(context.security, 'session_description_update');
-
     const { sessionStore, storeScope, sessionId } = context;
 
     if (!sessionStore || !storeScope || !sessionId) {

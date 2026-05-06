@@ -66,7 +66,6 @@ const setupContext = async (
   extra: Partial<ToolContext> = {},
 ): Promise<{ context: ToolContext; tools: ReturnType<typeof createScheduleToolset>['tools'] }> => {
   const { security } = await createSecurityFixture(t, {
-    security: { autonomy_level: 'full' },
   });
   await security.load();
 
@@ -232,7 +231,7 @@ test('schedule_runs returns run history', async (t) => {
 });
 
 test('schedule_create throws when no scheduleStore configured', async (t) => {
-  const { security } = await createSecurityFixture(t, { security: { autonomy_level: 'full' } });
+  const { security } = await createSecurityFixture(t, {});
   await security.load();
   const context: ToolContext = { security, storeScope: scope };
   const { tools } = createScheduleToolset(context);

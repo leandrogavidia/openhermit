@@ -7,7 +7,6 @@ import {
   type ToolContext,
   asTextContent,
   formatJson,
-  ensureAutonomyAllows,
 } from './shared.js';
 
 // ── Parameters ──────────────────────────────────────────────────────
@@ -121,8 +120,6 @@ const createScheduleCreateTool = (context: ToolContext): PolicyAwareTool<typeof 
     + 'or type "once" with a run_at time for one-time tasks. The prompt is sent to the agent when triggered.',
   parameters: ScheduleCreateParams,
   execute: async (_toolCallId, args: ScheduleCreateArgs) => {
-    ensureAutonomyAllows(context.security, 'schedule_create');
-
     if (!context.scheduleStore || !context.storeScope) {
       throw new ValidationError('schedule_create is unavailable: no schedule store is configured.');
     }
@@ -176,8 +173,6 @@ const createScheduleUpdateTool = (context: ToolContext): PolicyAwareTool<typeof 
   description: 'Update an existing schedule. Can change status (active/paused), prompt, or cron expression.',
   parameters: ScheduleUpdateParams,
   execute: async (_toolCallId, args: ScheduleUpdateArgs) => {
-    ensureAutonomyAllows(context.security, 'schedule_update');
-
     if (!context.scheduleStore || !context.storeScope) {
       throw new ValidationError('schedule_update is unavailable: no schedule store is configured.');
     }
@@ -211,8 +206,6 @@ const createScheduleDeleteTool = (context: ToolContext): PolicyAwareTool<typeof 
   description: 'Delete a scheduled job permanently.',
   parameters: ScheduleDeleteParams,
   execute: async (_toolCallId, args: ScheduleDeleteArgs) => {
-    ensureAutonomyAllows(context.security, 'schedule_delete');
-
     if (!context.scheduleStore || !context.storeScope) {
       throw new ValidationError('schedule_delete is unavailable: no schedule store is configured.');
     }
@@ -240,8 +233,6 @@ const createScheduleTriggerTool = (context: ToolContext): PolicyAwareTool<typeof
   description: 'Trigger a scheduled job immediately, regardless of its next run time. The job runs in its configured session.',
   parameters: ScheduleTriggerParams,
   execute: async (_toolCallId, args: ScheduleTriggerArgs) => {
-    ensureAutonomyAllows(context.security, 'schedule_trigger');
-
     if (!context.scheduleStore || !context.storeScope) {
       throw new ValidationError('schedule_trigger is unavailable: no schedule store is configured.');
     }

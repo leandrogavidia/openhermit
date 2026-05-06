@@ -7,7 +7,6 @@ import {
   type ToolContext,
   asTextContent,
   formatJson,
-  ensureAutonomyAllows,
 } from './shared.js';
 
 // ── Parameters ──────────────────────────────────────────────────────
@@ -78,7 +77,6 @@ export const createApprovalReviewTool = (context: ToolContext): PolicyAwareTool<
     + '"persistent" to auto-create an allow policy so future identical requests are allowed automatically.',
   parameters: ApprovalReviewParams,
   execute: async (_id, args: ApprovalReviewArgs) => {
-    ensureAutonomyAllows(context.security, 'approval_review');
     if (!context.approvalRequestStore || !context.storeScope) {
       throw new ValidationError('approval_review is unavailable: no approval store is configured.');
     }

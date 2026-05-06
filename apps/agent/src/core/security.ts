@@ -8,7 +8,6 @@ import { AgentWorkspace } from './workspace.js';
 import {
   DEFAULT_SECURITY_POLICY,
   type AgentRuntimeConfig,
-  type AutonomyLevel,
   type ChannelTokenEntry,
   type SecretsMap,
   type SecurityPolicy,
@@ -169,18 +168,6 @@ export class AgentSecurity {
 
     const parsedPolicy = (policyDoc ?? DEFAULT_SECURITY_POLICY) as SecurityPolicy;
 
-    if (
-      parsedPolicy.autonomy_level !== 'readonly' &&
-      parsedPolicy.autonomy_level !== 'supervised' &&
-      parsedPolicy.autonomy_level !== 'full'
-    ) {
-      throw new ValidationError(`Invalid autonomy_level for agent ${this.agentId}`);
-    }
-
-    if (!Array.isArray(parsedPolicy.require_approval_for)) {
-      throw new ValidationError(`Invalid require_approval_for for agent ${this.agentId}`);
-    }
-
     const channelTokens: ChannelTokenEntry[] = [];
     if (Array.isArray(parsedPolicy.channel_tokens)) {
       for (const entry of parsedPolicy.channel_tokens) {
@@ -199,10 +186,6 @@ export class AgentSecurity {
     }
 
     this.policy = {
-      autonomy_level: parsedPolicy.autonomy_level,
-      require_approval_for: parsedPolicy.require_approval_for.filter(
-        (value): value is string => typeof value === 'string',
-      ),
       ...(parsedPolicy.access ? { access: parsedPolicy.access } : {}),
       ...(parsedPolicy.access_token ? { access_token: parsedPolicy.access_token } : {}),
       ...(channelTokens.length > 0 ? { channel_tokens: channelTokens } : {}),
@@ -222,10 +205,6 @@ export class AgentSecurity {
     return this.options.workspace.resolve(relativePath, options);
   }
 
-  getAutonomyLevel(): AutonomyLevel {
-    return this.policy.autonomy_level;
-  }
-
   getAccessLevel(): import('./types.js').AgentAccessLevel {
     return this.policy.access ?? 'public';
   }
@@ -236,10 +215,6 @@ export class AgentSecurity {
 
   getChannelTokens(): ChannelTokenEntry[] {
     return this.policy.channel_tokens ?? [];
-  }
-
-  requiresApproval(toolName: string): boolean {
-    return this.policy.require_approval_for.includes(toolName);
   }
 
   resolveSecrets(names: string[]): Record<string, string> {

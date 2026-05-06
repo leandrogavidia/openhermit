@@ -15,30 +15,6 @@ export interface ToolHookContext {
   sessionId: string;
 }
 
-const approvalCacheKey = (toolName: string, args: unknown): string | undefined => {
-  if (
-    toolName === 'container_start' &&
-    args !== null &&
-    typeof args === 'object' &&
-    'name' in args &&
-    typeof (args as Record<string, unknown>).name === 'string'
-  ) {
-    return `${toolName}::${(args as Record<string, unknown>).name}`;
-  }
-
-  if (
-    toolName === 'exec' &&
-    args !== null &&
-    typeof args === 'object' &&
-    'command' in args &&
-    typeof (args as Record<string, unknown>).command === 'string'
-  ) {
-    return `${toolName}::${(args as Record<string, unknown>).command}`;
-  }
-
-  return undefined;
-};
-
 /**
  * Run plugin hooks around a tool call. Returns either an early-result
  * (when a plugin vetoes) or the (possibly rewritten) args plus a
@@ -125,10 +101,10 @@ const callWithHooks = async (
 
 export const withApproval = (
   tool: AgentTool<any>,
-  security: AgentSecurity,
+  _security: AgentSecurity,
   approvalCallback: ApprovalCallback | undefined,
   onToolCall?: ToolCallCallback,
-  approvedCache?: Set<string>,
+  _approvedCache?: Set<string>,
   hookCtx?: ToolHookContext,
 ): AgentTool<any> => {
   const wrapApprovalRequired = (fn: AgentTool<any>['execute']): AgentTool<any>['execute'] =>
@@ -181,42 +157,6 @@ export const withApproval = (
       signal?: AbortSignal,
       onUpdate?: Parameters<AgentTool<any>['execute']>[3],
     ) => {
-      const needsApproval =
-        security.getAutonomyLevel() !== 'full' &&
-        security.requiresApproval(tool.name);
-
-      if (needsApproval) {
-        const cacheKey = approvalCacheKey(tool.name, args);
-
-        if (cacheKey && approvedCache?.has(cacheKey)) {
-          // Already approved in this session — skip prompt.
-        } else {
-          const decision = await approvalCallback(tool.name, toolCallId, args);
-
-          if (decision !== 'approved') {
-            const text =
-              decision === 'timed_out'
-                ? `Tool call "${tool.name}" timed out waiting for user approval.`
-                : decision === 'cancelled'
-                  ? `Tool call "${tool.name}" was cancelled before approval was received.`
-                  : `Tool call "${tool.name}" was rejected by the user.`;
-
-            return {
-              content: asTextContent(text),
-              details: {
-                rejected: true,
-                toolName: tool.name,
-                approvalStatus: decision,
-              },
-            };
-          }
-
-          if (cacheKey && approvedCache) {
-            approvedCache.add(cacheKey);
-          }
-        }
-      }
-
       await onToolCall?.(tool.name, toolCallId, args);
       return callWithHooks(tool, toolCallId, args, signal, onUpdate, hookCtx);
     }),
