@@ -37,7 +37,7 @@ type SandboxExecArgs = Static<typeof SandboxExecParams>;
 export const createSandboxExecTool = (
   context: ToolContext,
 ): PolicyAwareTool<typeof SandboxExecParams> => ({
-  policy: { kind: 'configurable', defaultGrants: [{ type: 'role', value: 'owner' }, { type: 'role', value: 'user' }] },
+  policy: { kind: 'configurable', defaultGrants: [{ type: 'role', value: 'owner' }] },
   name: 'exec',
   label: 'Exec',
   description: buildExecDescription(context),
