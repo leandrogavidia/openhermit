@@ -1997,6 +1997,57 @@ export class AgentRunner implements SessionRuntime {
       }
     }
 
+    // Post-pass: ensure every toolResult has a matching toolCall in a
+    // preceding assistant message.  Orphaned tool_results can appear when
+    // a policy-based require_approval wrapper returned early before the
+    // onToolCall callback was wired up.
+    const knownToolCallIds = new Set<string>();
+    for (const msg of messages) {
+      if (msg.role === 'assistant') {
+        for (const b of msg.content) {
+          if (b.type === 'toolCall') knownToolCallIds.add((b as { id: string }).id);
+        }
+      }
+    }
+    for (let i = 0; i < messages.length; i++) {
+      const msg = messages[i]!;
+      if (msg.role !== 'toolResult') continue;
+      const tr = msg as import('@mariozechner/pi-ai').ToolResultMessage;
+      if (knownToolCallIds.has(tr.toolCallId)) continue;
+      // Find or create a preceding assistant message to attach the synthetic toolCall.
+      let target: import('@mariozechner/pi-ai').AssistantMessage | undefined;
+      for (let j = i - 1; j >= 0; j--) {
+        if (messages[j]!.role === 'assistant') {
+          target = messages[j] as import('@mariozechner/pi-ai').AssistantMessage;
+          break;
+        }
+      }
+      const syntheticToolCall: import('@mariozechner/pi-ai').ToolCall = {
+        type: 'toolCall',
+        id: tr.toolCallId,
+        name: tr.toolName,
+        arguments: {},
+      };
+      if (target) {
+        target.content.push(syntheticToolCall);
+        if (target.stopReason !== 'toolUse') target.stopReason = 'toolUse';
+      } else {
+        const syntheticAssistant: import('@mariozechner/pi-ai').AssistantMessage = {
+          role: 'assistant',
+          content: [syntheticToolCall],
+          api: 'anthropic-messages',
+          provider: 'anthropic',
+          model: 'unknown',
+          usage: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, totalTokens: 0, cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 } },
+          stopReason: 'toolUse',
+          timestamp: tr.timestamp,
+        };
+        messages.splice(i, 0, syntheticAssistant);
+        i++;
+      }
+      knownToolCallIds.add(tr.toolCallId);
+    }
+
     this.logRuntime(
       `[${sessionId}] resumed with ${messages.length} messages from DB`
       + (compactionSummary ? ' (with compaction summary)' : ''),
