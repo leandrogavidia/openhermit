@@ -1100,10 +1100,10 @@ export class AgentRunner implements SessionRuntime {
     };
   }
 
-  private makeNotifyOwnerApproval(): ((requestId: string, resourceType: string, resourceKey: string, requesterId: string) => Promise<void>) | undefined {
+  private makeNotifyOwnerApproval(): ((requestId: string, resourceType: string, resourceKey: string, requesterId: string, requesterSessionId: string) => Promise<void>) | undefined {
     if (this.channelOutbound.size === 0) return undefined;
 
-    return async (requestId, resourceType, resourceKey, requesterId) => {
+    return async (requestId, resourceType, resourceKey, requesterId, requesterSessionId) => {
       try {
         const config = await this.options.security.readConfig();
         const notif = config.notifications;
@@ -1128,6 +1128,16 @@ export class AgentRunner implements SessionRuntime {
         }
 
         if (!targetSession) return;
+
+        void this.events.publish({
+          type: 'approval_pending',
+          sessionId: targetSession.sessionId,
+          requestId,
+          toolName: resourceKey,
+          requesterId,
+          requesterSessionId,
+          mode: 'async',
+        });
 
         const { resolveOutbound } = await import('./tools/session.js');
         const outbound = resolveOutbound(targetSession, this.channelOutbound);
@@ -1629,6 +1639,7 @@ export class AgentRunner implements SessionRuntime {
     const userId = input.userId;
     const sessionId = input.contextSessionId;
     const notifyOwner = this.makeNotifyOwnerApproval();
+    const eventBroker = this.events;
 
     const filteredTools = tools
       .filter((t: any) => {
@@ -1663,16 +1674,31 @@ export class AgentRunner implements SessionRuntime {
           execute: async (toolCallId: string, args: unknown, signal?: AbortSignal, onUpdate?: any) => {
             // Real-time approval: owner interactive session with ApprovalGate
             if (input.approvalCallback) {
+              if (sessionId) {
+                void eventBroker.publish({
+                  type: 'approval_requested',
+                  sessionId,
+                  toolName: t.name,
+                  toolCallId,
+                  mode: 'realtime',
+                });
+                void eventBroker.publish({
+                  type: 'approval_pending',
+                  sessionId,
+                  toolName: t.name,
+                  requesterId: userId ?? 'unknown',
+                  requesterSessionId: sessionId,
+                  mode: 'realtime',
+                });
+              }
               const decision = await input.approvalCallback(t.name, toolCallId, args);
               if (decision === 'rejected' || decision === 'timed_out' || decision === 'cancelled') {
-                // Emit tool_call for rejected/cancelled — withApproval won't run
                 if (input.onToolCall) await input.onToolCall(t.name, toolCallId, args);
                 return {
                   content: [{ type: 'text' as const, text: `Tool "${t.name}" was ${decision} by the user.` }],
                   details: { rejected: true, decision },
                 };
               }
-              // Approved: withApproval wrapper on t.execute will emit tool_call
               return t.execute(toolCallId, args, signal, onUpdate);
             }
 
@@ -1689,8 +1715,18 @@ export class AgentRunner implements SessionRuntime {
                   resourceType: 'tool',
                   resourceKey,
                 });
+                if (sessionId) {
+                  void eventBroker.publish({
+                    type: 'approval_requested',
+                    sessionId,
+                    requestId: request.id,
+                    toolName: t.name,
+                    toolCallId,
+                    mode: 'async',
+                  });
+                }
                 if (notifyOwner) {
-                  notifyOwner(request.id, 'tool', resourceKey, userId).catch(() => {});
+                  notifyOwner(request.id, 'tool', resourceKey, userId, sessionId ?? 'unknown').catch(() => {});
                 }
                 return {
                   content: [{

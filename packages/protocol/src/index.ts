@@ -134,6 +134,23 @@ export type OutboundEvent =
       args?: unknown;
     }
   | {
+      type: 'approval_requested';
+      sessionId: string;
+      requestId?: string;
+      toolName: string;
+      toolCallId: string;
+      mode: 'realtime' | 'async';
+    }
+  | {
+      type: 'approval_pending';
+      sessionId: string;
+      requestId?: string;
+      toolName: string;
+      requesterId: string;
+      requesterSessionId: string;
+      mode: 'realtime' | 'async';
+    }
+  | {
       type: 'channel_message_sent';
       sessionId: string;
       channel: string;

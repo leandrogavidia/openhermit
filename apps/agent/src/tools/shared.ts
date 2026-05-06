@@ -68,7 +68,7 @@ export interface ToolContext {
   hookBus?: import('../events.js').AgentEventBus;
   /** When set, called after an async ApprovalRequest is created to notify
    *  the owner via their configured notification channel. */
-  notifyOwnerApproval?: (requestId: string, resourceType: string, resourceKey: string, requesterId: string) => Promise<void>;
+  notifyOwnerApproval?: (requestId: string, resourceType: string, resourceKey: string, requesterId: string, requesterSessionId: string) => Promise<void>;
 }
 
 /** Maximum characters for a single tool result text block (~256 KB). */
@@ -139,7 +139,7 @@ export const checkApprovalOrRequest = async (
   });
 
   if (context.notifyOwnerApproval) {
-    context.notifyOwnerApproval(request.id, resourceType, resourceKey, context.currentUserId).catch(() => {});
+    context.notifyOwnerApproval(request.id, resourceType, resourceKey, context.currentUserId, context.sessionId ?? 'unknown').catch(() => {});
   }
 
   throw new ApprovalRequiredError(request.id, resourceType, resourceKey);
