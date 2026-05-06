@@ -497,6 +497,17 @@ export class GatewayClient {
     return this.getJson(`/api/admin/mcp-servers`);
   }
 
+  async registerMcpServer(input: {
+    id: string;
+    name: string;
+    description: string;
+    url: string;
+    headers?: Record<string, string>;
+    metadata?: Record<string, unknown>;
+  }): Promise<void> {
+    await this.postJson(`/api/admin/mcp-servers`, input);
+  }
+
   async listMcpAssignments(): Promise<Array<{ agentId: string; mcpServerId: string; enabled: boolean }>> {
     return this.getJson(`/api/admin/mcp-servers/assignments`);
   }
