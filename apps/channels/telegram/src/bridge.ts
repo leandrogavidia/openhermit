@@ -446,7 +446,8 @@ export class TelegramBridge implements ChannelOutbound {
           if (frame.event === 'tool_approval_required') {
             const toolName = String(payload.toolName ?? 'unknown');
             const toolCallId = String(payload.toolCallId ?? '');
-            void this.sendApprovalPrompt(chatId, sessionId, toolName, toolCallId).catch(() => undefined);
+            const args = payload.args as Record<string, unknown> | undefined;
+            void this.sendApprovalPrompt(chatId, sessionId, toolName, toolCallId, args).catch(() => undefined);
             continue;
           }
 
@@ -502,13 +503,27 @@ export class TelegramBridge implements ChannelOutbound {
     sessionId: string,
     toolName: string,
     toolCallId: string,
+    args?: Record<string, unknown>,
   ): Promise<void> {
     const id = String(++this.approvalSeq);
     this.pendingApprovals.set(id, { sessionId, toolCallId });
 
+    let text = `🔔 <b>Approval Required</b>\n\nTool: <code>${this.escapeHtml(toolName)}</code>`;
+    if (args && typeof args === 'object') {
+      const entries = Object.entries(args);
+      if (entries.length > 0) {
+        const lines = entries.map(([k, v]) => {
+          const val = typeof v === 'string' ? v : JSON.stringify(v, null, 2);
+          const truncated = val.length > 300 ? val.slice(0, 300) + '…' : val;
+          return `<b>${this.escapeHtml(k)}</b>: <code>${this.escapeHtml(truncated)}</code>`;
+        });
+        text += '\n\n' + lines.join('\n');
+      }
+    }
+
     await this.telegram.sendMessage(
       chatId,
-      `🔔 Tool <b>${toolName}</b> requires approval.`,
+      text,
       {
         parseMode: 'HTML',
         replyMarkup: {
@@ -587,6 +602,10 @@ export class TelegramBridge implements ChannelOutbound {
 
     await this.telegram.answerCallbackQuery(query.id, { text: approved ? 'Approved' : 'Rejected' });
     this.editApprovalMessage(query, approved);
+  }
+
+  private escapeHtml(text: string): string {
+    return text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
   }
 
   private editApprovalMessage(query: TelegramCallbackQuery, approved: boolean): void {
