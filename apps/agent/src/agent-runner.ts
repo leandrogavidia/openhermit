@@ -1675,10 +1675,22 @@ export class AgentRunner implements SessionRuntime {
           execute: async (toolCallId: string, args: unknown, signal?: AbortSignal, onUpdate?: any) => {
             // Real-time approval: owner interactive session with ApprovalGate
             if (input.approvalCallback) {
+              let requestId: string | undefined;
+              if (approvalStore && userId) {
+                const request = await approvalStore.create({
+                  agentId,
+                  sessionId: sessionId ?? 'unknown',
+                  requesterId: userId,
+                  resourceType: 'tool',
+                  resourceKey: t.name,
+                });
+                requestId = request.id;
+              }
               if (sessionId) {
                 void eventBroker.publish({
                   type: 'approval_requested',
                   sessionId,
+                  ...(requestId ? { requestId } : {}),
                   resourceType: 'tool',
                   resourceKey: t.name,
                   toolCallId,
@@ -1687,6 +1699,7 @@ export class AgentRunner implements SessionRuntime {
                 void eventBroker.publish({
                   type: 'approval_pending',
                   sessionId,
+                  ...(requestId ? { requestId } : {}),
                   resourceType: 'tool',
                   resourceKey: t.name,
                   requesterId: userId ?? 'unknown',
@@ -1695,6 +1708,10 @@ export class AgentRunner implements SessionRuntime {
                 });
               }
               const decision = await input.approvalCallback(t.name, toolCallId, args);
+              if (requestId && approvalStore) {
+                const dbDecision = decision === 'approved' ? 'approved' : 'rejected';
+                approvalStore.resolve(requestId, dbDecision, userId ?? 'system', 'once').catch(() => {});
+              }
               if (decision === 'rejected' || decision === 'timed_out' || decision === 'cancelled') {
                 if (input.onToolCall) await input.onToolCall(t.name, toolCallId, args);
                 return {
