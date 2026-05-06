@@ -1665,11 +1665,14 @@ export class AgentRunner implements SessionRuntime {
             if (input.approvalCallback) {
               const decision = await input.approvalCallback(t.name, toolCallId, args);
               if (decision === 'rejected' || decision === 'timed_out' || decision === 'cancelled') {
+                // Emit tool_call for rejected/cancelled — withApproval won't run
+                if (input.onToolCall) await input.onToolCall(t.name, toolCallId, args);
                 return {
                   content: [{ type: 'text' as const, text: `Tool "${t.name}" was ${decision} by the user.` }],
                   details: { rejected: true, decision },
                 };
               }
+              // Approved: withApproval wrapper on t.execute will emit tool_call
               return t.execute(toolCallId, args, signal, onUpdate);
             }
 
@@ -1678,6 +1681,7 @@ export class AgentRunner implements SessionRuntime {
               const resourceKey = t.name;
               const approved = await approvalStore.findApproved(agentId, userId, 'tool', resourceKey);
               if (!approved) {
+                if (input.onToolCall) await input.onToolCall(t.name, toolCallId, args);
                 const request = await approvalStore.create({
                   agentId,
                   sessionId: sessionId ?? 'unknown',
