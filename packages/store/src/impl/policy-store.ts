@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto';
 
 import { drizzle } from 'drizzle-orm/node-postgres';
-import { and, eq, sql } from 'drizzle-orm';
+import { and, eq } from 'drizzle-orm';
 import pg from 'pg';
 
 import type { PolicyStore } from '../interfaces.js';
@@ -9,9 +9,6 @@ import type { PolicyRecord } from '../types.js';
 import * as schema from '../schema.js';
 import { agentPolicies } from '../schema.js';
 import type { DrizzleDb } from './index.js';
-
-const nullCondition = (col: any, value: string | undefined | null) =>
-  value ? eq(col, value) : sql`${col} IS NULL`;
 
 export class DbPolicyStore implements PolicyStore {
   private pool?: pg.Pool;
@@ -46,7 +43,6 @@ export class DbPolicyStore implements PolicyStore {
     agentId: string,
     resourceType: string,
     resourceKey: string,
-    opts?: { sandboxAlias?: string; mode?: string },
   ): Promise<PolicyRecord | undefined> {
     const rows = await this.db
       .select()
@@ -56,8 +52,6 @@ export class DbPolicyStore implements PolicyStore {
           eq(agentPolicies.agentId, agentId),
           eq(agentPolicies.resourceType, resourceType),
           eq(agentPolicies.resourceKey, resourceKey),
-          nullCondition(agentPolicies.sandboxAlias, opts?.sandboxAlias),
-          nullCondition(agentPolicies.mode, opts?.mode),
         ),
       )
       .limit(1);
@@ -69,29 +63,23 @@ export class DbPolicyStore implements PolicyStore {
     input: Omit<PolicyRecord, 'id' | 'createdAt' | 'updatedAt'>,
   ): Promise<PolicyRecord> {
     const now = new Date().toISOString();
-    const existing = await this.get(
-      input.agentId,
-      input.resourceType,
-      input.resourceKey,
-      { ...(input.sandboxAlias ? { sandboxAlias: input.sandboxAlias } : {}), ...(input.mode ? { mode: input.mode } : {}) },
-    );
+    const existing = await this.get(input.agentId, input.resourceType, input.resourceKey);
 
     if (existing) {
       await this.db
         .update(agentPolicies)
-        .set({ grants: input.grants, updatedAt: now })
+        .set({ grants: input.grants, scope: input.scope, updatedAt: now })
         .where(eq(agentPolicies.id, existing.id));
-      return { ...existing, grants: input.grants, updatedAt: now };
+      return { ...existing, grants: input.grants, scope: input.scope, updatedAt: now };
     }
 
     const row = {
       id: randomUUID(),
       agentId: input.agentId,
-      sandboxAlias: input.sandboxAlias,
       resourceType: input.resourceType,
-      mode: input.mode,
       resourceKey: input.resourceKey,
       grants: input.grants,
+      scope: input.scope,
       createdAt: now,
       updatedAt: now,
     };
@@ -103,7 +91,6 @@ export class DbPolicyStore implements PolicyStore {
     agentId: string,
     resourceType: string,
     resourceKey: string,
-    opts?: { sandboxAlias?: string; mode?: string },
   ): Promise<void> {
     await this.db
       .delete(agentPolicies)
@@ -112,8 +99,6 @@ export class DbPolicyStore implements PolicyStore {
           eq(agentPolicies.agentId, agentId),
           eq(agentPolicies.resourceType, resourceType),
           eq(agentPolicies.resourceKey, resourceKey),
-          nullCondition(agentPolicies.sandboxAlias, opts?.sandboxAlias),
-          nullCondition(agentPolicies.mode, opts?.mode),
         ),
       );
   }
@@ -123,11 +108,10 @@ function toRecord(row: typeof agentPolicies.$inferSelect): PolicyRecord {
   return {
     id: row.id,
     agentId: row.agentId,
-    sandboxAlias: row.sandboxAlias,
     resourceType: row.resourceType,
-    mode: row.mode,
     resourceKey: row.resourceKey,
     grants: row.grants ?? [],
+    scope: (row.scope ?? {}) as Record<string, unknown>,
     createdAt: row.createdAt,
     updatedAt: row.updatedAt,
   };

@@ -170,11 +170,10 @@ export const sandboxes = pgTable('sandboxes', {
 export const agentPolicies = pgTable('agent_policies', {
   id: text('id').primaryKey(),
   agentId: text('agent_id').notNull(),
-  sandboxAlias: text('sandbox_alias'),
   resourceType: text('resource_type').notNull(),
-  mode: text('mode'),
   resourceKey: text('resource_key').notNull(),
   grants: jsonb('grants').$type<unknown[]>().notNull().default([]),
+  scope: jsonb('scope').$type<Record<string, unknown>>().notNull().default({}),
   createdAt: text('created_at').notNull(),
   updatedAt: text('updated_at').notNull(),
 }, (table) => [

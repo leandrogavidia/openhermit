@@ -72,9 +72,8 @@ test('tools without declared policy default to open', () => {
 test('resolveToolGrants: DB row overrides default', () => {
   const rows: PolicyRow[] = [{
     agentId: 'a',
-    sandboxAlias: null,
     resourceType: 'tool',
-    mode: null,
+    scope: {},
     resourceKey: 'exec',
     grants: [{ type: 'any' }],
   }];
@@ -93,9 +92,8 @@ test('resolveToolGrants: falls back to open when no row and no declared policy',
 test('resolveToolGrants: prefix pattern matches MCP tools', () => {
   const rows: PolicyRow[] = [{
     agentId: 'a',
-    sandboxAlias: null,
     resourceType: 'tool',
-    mode: null,
+    scope: {},
     resourceKey: 'mcp__weather__*',
     grants: [{ type: 'role', value: 'owner' }],
   }];
@@ -107,9 +105,8 @@ test('resolveToolGrants: prefix pattern matches MCP tools', () => {
 test('resolveToolGrants: prefix pattern does not match unrelated tools', () => {
   const rows: PolicyRow[] = [{
     agentId: 'a',
-    sandboxAlias: null,
     resourceType: 'tool',
-    mode: null,
+    scope: {},
     resourceKey: 'mcp__weather__*',
     grants: [{ type: 'role', value: 'owner' }],
   }];
@@ -121,12 +118,12 @@ test('resolveToolGrants: prefix pattern does not match unrelated tools', () => {
 test('resolveToolGrants: exact match takes priority over prefix', () => {
   const rows: PolicyRow[] = [
     {
-      agentId: 'a', sandboxAlias: null, resourceType: 'tool', mode: null,
+      agentId: 'a', resourceType: 'tool', scope: {},
       resourceKey: 'mcp__weather__*',
       grants: [{ type: 'role', value: 'owner' }],
     },
     {
-      agentId: 'a', sandboxAlias: null, resourceType: 'tool', mode: null,
+      agentId: 'a', resourceType: 'tool', scope: {},
       resourceKey: 'mcp__weather__public_status',
       grants: [{ type: 'any' }],
     },
@@ -161,9 +158,8 @@ test('resolveToolGrants: fixed policy ignores DB rows', () => {
   const fixedPolicy: ToolPolicy = { kind: 'fixed', grants: [{ type: 'role', value: 'owner' }] };
   const rows: PolicyRow[] = [{
     agentId: 'a',
-    sandboxAlias: null,
     resourceType: 'tool',
-    mode: null,
+    scope: {},
     resourceKey: 'my_tool',
     grants: [{ type: 'any' }],
   }];
@@ -180,9 +176,8 @@ test('resolveToolGrants: configurable policy uses DB row when present', () => {
   };
   const rows: PolicyRow[] = [{
     agentId: 'a',
-    sandboxAlias: null,
     resourceType: 'tool',
-    mode: null,
+    scope: {},
     resourceKey: 'my_tool',
     grants: [{ type: 'any' }],
   }];

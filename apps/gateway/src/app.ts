@@ -2283,8 +2283,9 @@ export const createGatewayApp = (options: GatewayAppOptions): Hono => {
       resourceType: body.resourceType,
       resourceKey: body.resourceKey,
       grants: body.grants,
-      sandboxAlias: typeof body.sandboxAlias === 'string' ? body.sandboxAlias : null,
-      mode: typeof body.mode === 'string' ? body.mode : null,
+      scope: (typeof body.scope === 'object' && body.scope !== null && !Array.isArray(body.scope))
+        ? body.scope as Record<string, unknown>
+        : {},
     });
     return c.json(record, 201);
   });
@@ -2295,15 +2296,9 @@ export const createGatewayApp = (options: GatewayAppOptions): Hono => {
     const resourceKey = c.req.param('resourceKey') ?? '';
     await requireOwnerOrAdmin(c, agentId);
     const store = requirePolicyStore();
-    const sandboxAlias = c.req.query('sandboxAlias');
-    const mode = c.req.query('mode');
-    const opts = {
-      ...(sandboxAlias ? { sandboxAlias } : {}),
-      ...(mode ? { mode } : {}),
-    };
-    const existing = await store.get(agentId, resourceType, resourceKey, opts);
+    const existing = await store.get(agentId, resourceType, resourceKey);
     if (!existing) throw new NotFoundError(`Policy not found: ${resourceType}/${resourceKey}`);
-    await store.delete(agentId, resourceType, resourceKey, opts);
+    await store.delete(agentId, resourceType, resourceKey);
     return c.json({ ok: true });
   });
 

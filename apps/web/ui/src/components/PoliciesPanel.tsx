@@ -40,10 +40,7 @@ export function PoliciesPanel() {
   const handleDelete = async (p: PolicyInfo) => {
     if (!window.confirm(`Delete policy for ${p.resourceType}/${p.resourceKey}?`)) return;
     try {
-      await deletePolicy(p.resourceType, p.resourceKey, {
-        ...(p.sandboxAlias ? { sandboxAlias: p.sandboxAlias } : {}),
-        ...(p.mode ? { mode: p.mode } : {}),
-      });
+      await deletePolicy(p.resourceType, p.resourceKey);
       await load();
     } catch (err) {
       setError((err as Error).message);
@@ -79,8 +76,9 @@ export function PoliciesPanel() {
               <div className="policies-row__info">
                 <span className="policies-row__key">{p.resourceKey}</span>
                 <span className="policies-row__type">{p.resourceType}</span>
-                {p.sandboxAlias && <span className="policies-row__scope">sandbox={p.sandboxAlias}</span>}
-                {p.mode && <span className="policies-row__scope">mode={p.mode}</span>}
+                {p.scope && Object.keys(p.scope).length > 0 && (
+                  <span className="policies-row__scope">{JSON.stringify(p.scope)}</span>
+                )}
               </div>
               <div className="policies-row__grants">{grantsLabel(p.grants)}</div>
               <div className="policies-row__actions">

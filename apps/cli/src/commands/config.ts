@@ -206,11 +206,10 @@ export const registerConfigCommand = (program: Command): void => {
           return;
         }
         for (const p of policies) {
-          const scope = [
-            p.sandboxAlias ? `sandbox=${p.sandboxAlias}` : null,
-            p.mode ? `mode=${p.mode}` : null,
-          ].filter(Boolean).join(' ');
-          console.log(`  ${p.resourceType}/${p.resourceKey}${scope ? ` (${scope})` : ''}`);
+          const scope = p.scope && typeof p.scope === 'object' && Object.keys(p.scope as Record<string, unknown>).length > 0
+            ? ` scope=${JSON.stringify(p.scope)}`
+            : '';
+          console.log(`  ${p.resourceType}/${p.resourceKey}${scope}`);
           console.log(`    grants: ${JSON.stringify(p.grants)}`);
         }
       } catch (error) {
@@ -222,11 +221,10 @@ export const registerConfigCommand = (program: Command): void => {
     .command('set <resource-key> <grants-json>')
     .description('Set a tool policy (e.g. hermit config policy set exec \'[{"type":"any"}]\')')
     .option('--resource-type <type>', 'Resource type', 'tool')
-    .option('--sandbox-alias <alias>', 'Sandbox alias')
-    .option('--mode <mode>', 'Mode')
+    .option('--scope <json>', 'Scope JSON object')
     .action(async function (this: Command, resourceKey: string, grantsJson: string) {
       const agentId = resolveAgentId(this);
-      const opts = this.opts() as { resourceType: string; sandboxAlias?: string; mode?: string };
+      const opts = this.opts() as { resourceType: string; scope?: string };
       try {
         let grants: unknown[];
         try {
@@ -236,13 +234,21 @@ export const registerConfigCommand = (program: Command): void => {
           console.error('grants must be a valid JSON array, e.g. \'[{"type":"any"}]\'');
           process.exit(1);
         }
+        let scope: Record<string, unknown> = {};
+        if (opts.scope) {
+          try {
+            scope = JSON.parse(opts.scope);
+          } catch {
+            console.error('scope must be a valid JSON object');
+            process.exit(1);
+          }
+        }
         const gateway = createGateway();
         await gateway.upsertPolicy(agentId, {
           resourceType: opts.resourceType,
           resourceKey,
           grants,
-          ...(opts.sandboxAlias ? { sandboxAlias: opts.sandboxAlias } : {}),
-          ...(opts.mode ? { mode: opts.mode } : {}),
+          scope,
         });
         console.log(`Policy set: ${opts.resourceType}/${resourceKey} → ${grantsJson}`);
       } catch (error) {
@@ -254,17 +260,12 @@ export const registerConfigCommand = (program: Command): void => {
     .command('delete <resource-key>')
     .description('Delete a tool policy')
     .option('--resource-type <type>', 'Resource type', 'tool')
-    .option('--sandbox-alias <alias>', 'Sandbox alias')
-    .option('--mode <mode>', 'Mode')
     .action(async function (this: Command, resourceKey: string) {
       const agentId = resolveAgentId(this);
-      const opts = this.opts() as { resourceType: string; sandboxAlias?: string; mode?: string };
+      const opts = this.opts() as { resourceType: string };
       try {
         const gateway = createGateway();
-        await gateway.deletePolicy(agentId, opts.resourceType, resourceKey, {
-          ...(opts.sandboxAlias ? { sandboxAlias: opts.sandboxAlias } : {}),
-          ...(opts.mode ? { mode: opts.mode } : {}),
-        });
+        await gateway.deletePolicy(agentId, opts.resourceType, resourceKey);
         console.log(`Policy deleted: ${opts.resourceType}/${resourceKey}`);
       } catch (error) {
         handleError(error);

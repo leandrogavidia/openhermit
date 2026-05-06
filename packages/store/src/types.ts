@@ -52,11 +52,10 @@ export interface SandboxRecord {
 export interface PolicyRecord {
   id: string;
   agentId: string;
-  sandboxAlias: string | null;
   resourceType: string;
-  mode: string | null;
   resourceKey: string;
   grants: unknown[];
+  scope: Record<string, unknown>;
   createdAt: string;
   updatedAt: string;
 }

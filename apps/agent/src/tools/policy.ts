@@ -19,8 +19,8 @@ const PolicyListParams = Type.Object({
 });
 
 const PolicySetParams = Type.Object({
-  resource_type: Type.String({ description: 'Resource type (e.g. "tool").' }),
-  resource_key: Type.String({ description: 'Resource key (e.g. tool name like "exec", "file_write").' }),
+  resource_type: Type.String({ description: 'Resource type: "tool", "file", "exec", or "mcp".' }),
+  resource_key: Type.String({ description: 'Resource key. For tools: tool name (e.g. "exec", "mcp__weather__*"). For file: "sandbox:mode:path". For exec: "sandbox:cwd:command". For mcp: server id.' }),
   grants: Type.Array(
     Type.Object({
       type: Type.Union([Type.Literal('any'), Type.Literal('role'), Type.Literal('user')]),
@@ -28,15 +28,16 @@ const PolicySetParams = Type.Object({
     }),
     { description: 'Array of grants. Examples: [{"type":"any"}], [{"type":"role","value":"owner"},{"type":"role","value":"user"}]' },
   ),
-  sandbox_alias: Type.Optional(Type.String({ description: 'Sandbox alias. Omit for agent-wide.' })),
-  mode: Type.Optional(Type.String({ description: 'Mode qualifier. Omit for default.' })),
+  scope: Type.Optional(
+    Type.Record(Type.String(), Type.Unknown(), {
+      description: 'Optional scope metadata. For file: {sandbox, mode, path}. For exec: {sandbox, cwd, command}. Default: {}.',
+    }),
+  ),
 });
 
 const PolicyDeleteParams = Type.Object({
   resource_type: Type.String({ description: 'Resource type.' }),
   resource_key: Type.String({ description: 'Resource key.' }),
-  sandbox_alias: Type.Optional(Type.String({ description: 'Sandbox alias.' })),
-  mode: Type.Optional(Type.String({ description: 'Mode qualifier.' })),
 });
 
 type PolicyListArgs = Static<typeof PolicyListParams>;
@@ -90,8 +91,7 @@ export const createPolicySetTool = (context: ToolContext): PolicyAwareTool<typeo
       resourceType: args.resource_type,
       resourceKey: args.resource_key,
       grants: args.grants,
-      sandboxAlias: args.sandbox_alias ?? null,
-      mode: args.mode ?? null,
+      scope: (args.scope ?? {}) as Record<string, unknown>,
     });
     return {
       content: asTextContent(`Policy set: ${args.resource_type}/${args.resource_key} → ${JSON.stringify(args.grants)}\n`),
@@ -111,15 +111,10 @@ export const createPolicyDeleteTool = (context: ToolContext): PolicyAwareTool<ty
     if (!context.policyStore || !context.storeScope) {
       throw new ValidationError('policy_delete is unavailable: no policy store is configured.');
     }
-    const opts = {
-      ...(args.sandbox_alias ? { sandboxAlias: args.sandbox_alias } : {}),
-      ...(args.mode ? { mode: args.mode } : {}),
-    };
     const existing = await context.policyStore.get(
       context.storeScope.agentId,
       args.resource_type,
       args.resource_key,
-      opts,
     );
     if (!existing) {
       throw new ValidationError(`No policy found for ${args.resource_type}/${args.resource_key}.`);
@@ -128,7 +123,6 @@ export const createPolicyDeleteTool = (context: ToolContext): PolicyAwareTool<ty
       context.storeScope.agentId,
       args.resource_type,
       args.resource_key,
-      opts,
     );
     return {
       content: asTextContent(`Policy deleted: ${args.resource_type}/${args.resource_key}. Tool reverts to built-in default.\n`),

@@ -19,11 +19,10 @@ export interface Principal {
 
 export interface PolicyRow {
   agentId: string;
-  sandboxAlias: string | null;
   resourceType: string;
-  mode: string | null;
   resourceKey: string;
   grants: unknown[];
+  scope: Record<string, unknown>;
 }
 
 // ── Tool policy ─────────────────────────────────────────────────────────

@@ -526,8 +526,7 @@ export class GatewayClient {
     resourceType: string;
     resourceKey: string;
     grants: unknown[];
-    sandboxAlias?: string | null;
-    mode?: string | null;
+    scope?: Record<string, unknown>;
   }): Promise<unknown> {
     return this.postJson(`/api/agents/${encodeURIComponent(agentId)}/policies`, input);
   }
@@ -536,14 +535,10 @@ export class GatewayClient {
     agentId: string,
     resourceType: string,
     resourceKey: string,
-    opts?: { sandboxAlias?: string; mode?: string },
   ): Promise<void> {
-    let p = `/api/agents/${encodeURIComponent(agentId)}/policies/${encodeURIComponent(resourceType)}/${encodeURIComponent(resourceKey)}`;
-    const params = new URLSearchParams();
-    if (opts?.sandboxAlias) params.set('sandboxAlias', opts.sandboxAlias);
-    if (opts?.mode) params.set('mode', opts.mode);
-    if (params.size > 0) p += `?${params.toString()}`;
-    await this.deleteJson(p);
+    await this.deleteJson(
+      `/api/agents/${encodeURIComponent(agentId)}/policies/${encodeURIComponent(resourceType)}/${encodeURIComponent(resourceKey)}`,
+    );
   }
 
   agent(agentId: string): AgentLocalClient {
