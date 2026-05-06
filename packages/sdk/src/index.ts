@@ -113,6 +113,13 @@ export class AgentLocalClient {
     return this.postJson(agentLocalRoutes.sessionCheckpoint(sessionId), request);
   }
 
+  async reviewApprovalRequest(
+    requestId: string,
+    input: { decision: 'approved' | 'rejected'; resolution?: 'once' | 'persistent'; reason?: string },
+  ): Promise<unknown> {
+    return this.postJson(`/approvals/${encodeURIComponent(requestId)}/review`, input);
+  }
+
   async postMessageSync(
     sessionId: string,
     message: SessionMessage,

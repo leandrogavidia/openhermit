@@ -1135,13 +1135,13 @@ export class AgentRunner implements SessionRuntime {
 
         const text = `🔔 Approval required\n\n`
           + `User \`${requesterId}\` needs approval for ${resourceType}/${resourceKey}.\n`
-          + `Request ID: ${requestId}\n\n`
-          + `Use approval_review to approve or reject.`;
+          + `Request ID: ${requestId}`;
 
         await outbound.adapter.send({
           sessionId: targetSession.sessionId,
           to: outbound.to,
           text,
+          actions: [{ type: 'approval_review', requestId }],
         });
       } catch {
         // Best-effort — don't break the tool call if notification fails.

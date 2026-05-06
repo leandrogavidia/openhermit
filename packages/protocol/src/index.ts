@@ -153,6 +153,12 @@ export interface ChannelOutboundResult {
   error?: string;
 }
 
+export interface ChannelMessageAction {
+  type: 'approval_review';
+  requestId: string;
+  label?: string;
+}
+
 /**
  * Interface for channel adapters that support outbound (proactive) messaging.
  * Implementations send the message via the channel API and record it as a
@@ -164,6 +170,7 @@ export interface ChannelOutbound {
     sessionId: string;
     to: string;
     text: string;
+    actions?: ChannelMessageAction[];
   }): Promise<ChannelOutboundResult>;
 }
 
