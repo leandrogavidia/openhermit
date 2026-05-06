@@ -109,19 +109,14 @@ const checkFilePath = async (
   mode: FileMode,
   path: string,
 ): Promise<void> => {
-  if (!context.policyStore || !context.agentId) {
-    console.log(`[file-policy] skipped: policyStore=${!!context.policyStore} agentId=${context.agentId}`);
-    return;
-  }
+  if (!context.policyStore || !context.agentId) return;
 
   if (!cachedFileRows || cachedFileRows.agentId !== context.agentId) {
     const rows = await context.policyStore.list(context.agentId, 'file');
     cachedFileRows = { agentId: context.agentId, rows };
-    console.log(`[file-policy] loaded ${rows.length} file row(s) for agent ${context.agentId}`);
   }
 
   const matches = resolveFilePathMatches(cachedFileRows.rows, sandboxAlias, mode, path);
-  console.log(`[file-policy] check ${mode} ${path} (sandbox: ${sandboxAlias}) → matches=${JSON.stringify(matches)}`);
   if (matches === undefined) return;
 
   const principal = context.agentId
@@ -131,7 +126,6 @@ const checkFilePath = async (
     throw new ValidationError(`Access denied: ${mode} ${path} (sandbox: ${sandboxAlias})`);
   }
   const decision = evaluateAccess(principal, matches, 'deny');
-  console.log(`[file-policy] decision=${decision} principal=${JSON.stringify(principal)}`);
   if (decision === 'deny') {
     throw new ValidationError(`Access denied: ${mode} ${path} (sandbox: ${sandboxAlias})`);
   }
