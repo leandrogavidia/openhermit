@@ -26,6 +26,11 @@ const SandboxExecParams = Type.Object({
       description: 'Sandbox alias. Omit to use the default sandbox.',
     }),
   ),
+  cwd: Type.Optional(
+    Type.String({
+      description: 'Working directory. Defaults to the agent home directory.',
+    }),
+  ),
 });
 
 type SandboxExecArgs = Static<typeof SandboxExecParams>;
@@ -65,7 +70,7 @@ export const createSandboxExecTool = (
 
     await backend.ensure();
     context.onExec?.();
-    const result = await backend.exec(args.command);
+    const result = await backend.exec(args.command, args.cwd ? { cwd: args.cwd } : undefined);
 
     const details = {
       stdout: result.stdout,

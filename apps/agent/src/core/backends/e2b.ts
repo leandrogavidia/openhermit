@@ -3,7 +3,7 @@ import path from 'node:path';
 
 import { ValidationError } from '@openhermit/shared';
 
-import type { ExecBackend, ExecResult, SyncSkillEntry, BackendFactoryContext, E2BExecBackendConfig } from '../exec-backend.js';
+import type { ExecBackend, ExecOpts, ExecResult, SyncSkillEntry, BackendFactoryContext, E2BExecBackendConfig } from '../exec-backend.js';
 import { E2BFileBackend } from './file-backend.js';
 import { registerExecBackend } from '../exec-backend.js';
 
@@ -124,7 +124,7 @@ class E2BExecBackend implements ExecBackend {
     await this.replayPendingSkillSync();
   }
 
-  async exec(command: string): Promise<ExecResult> {
+  async exec(command: string, opts?: ExecOpts): Promise<ExecResult> {
     if (!this.sandbox) {
       await this.ensure();
     }
@@ -132,7 +132,7 @@ class E2BExecBackend implements ExecBackend {
     const startedAt = Date.now();
     try {
       const result = await this.sandbox!.commands.run(command, {
-        cwd: this.agentHome,
+        cwd: opts?.cwd ?? this.agentHome,
         timeoutMs: this.timeoutMs,
       });
       return {

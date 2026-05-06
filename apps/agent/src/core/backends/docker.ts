@@ -2,7 +2,7 @@ import path from 'node:path';
 
 import type { WorkspaceContainerConfig } from '../types.js';
 import type { DockerContainerManager } from '../container-manager.js';
-import type { ExecBackend, ExecResult, SyncSkillEntry, BackendFactoryContext, DockerExecBackendConfig } from '../exec-backend.js';
+import type { ExecBackend, ExecOpts, ExecResult, SyncSkillEntry, BackendFactoryContext, DockerExecBackendConfig } from '../exec-backend.js';
 import { HostFileBackend, type FileBackend } from './file-backend.js';
 import { registerExecBackend } from '../exec-backend.js';
 import { syncSkillsToHostDir } from './shared.js';
@@ -55,8 +55,8 @@ class DockerExecBackend implements ExecBackend {
     });
   }
 
-  async exec(command: string): Promise<ExecResult> {
-    return this.containerManager.execInWorkspace(this.agentId, command);
+  async exec(command: string, opts?: ExecOpts): Promise<ExecResult> {
+    return this.containerManager.execInWorkspace(this.agentId, command, opts?.cwd);
   }
 
   async syncSkills(skills: SyncSkillEntry[]): Promise<void> {

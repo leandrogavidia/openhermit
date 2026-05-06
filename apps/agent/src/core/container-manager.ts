@@ -357,6 +357,7 @@ export class DockerContainerManager {
   async execInWorkspace(
     agentId: string,
     command: string,
+    cwd?: string,
   ): Promise<ContainerProcessResult> {
     const name = this.containerName('workspace');
 
@@ -382,7 +383,10 @@ export class DockerContainerManager {
       }
     }
 
-    const result = await this.docker.run(['exec', name, 'sh', '-lc', command], 300_000);
+    const execArgs = cwd
+      ? ['exec', '-w', cwd, name, 'sh', '-lc', command]
+      : ['exec', name, 'sh', '-lc', command];
+    const result = await this.docker.run(execArgs, 300_000);
     const parsedOutput = parseStructuredOutput(result.stdout);
 
     return {

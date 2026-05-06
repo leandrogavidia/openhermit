@@ -25,6 +25,10 @@ export interface SyncSkillEntry {
   sourcePath: string;
 }
 
+export interface ExecOpts {
+  cwd?: string;
+}
+
 export interface ExecBackend {
   readonly id: string;
   readonly type: string;
@@ -36,7 +40,7 @@ export interface ExecBackend {
   /** Idempotent setup (start container, etc.). */
   ensure(): Promise<void>;
   /** Execute a shell command and return the result. */
-  exec(command: string): Promise<ExecResult>;
+  exec(command: string, opts?: ExecOpts): Promise<ExecResult>;
   /**
    * Make `<agentHome>/.openhermit/skills/system/` reflect exactly the given
    * skill set inside the exec env: copies in, removes stale entries.

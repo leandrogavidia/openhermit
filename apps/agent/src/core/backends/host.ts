@@ -4,7 +4,7 @@ import path from 'node:path';
 import { ValidationError } from '@openhermit/shared';
 
 import { BoundedString, DEFAULT_EXEC_OUTPUT_MAX_BYTES } from '../bounded-string.js';
-import type { ExecBackend, ExecResult, SyncSkillEntry, BackendFactoryContext, HostExecBackendConfig } from '../exec-backend.js';
+import type { ExecBackend, ExecOpts, ExecResult, SyncSkillEntry, BackendFactoryContext, HostExecBackendConfig } from '../exec-backend.js';
 import { HostFileBackend, type FileBackend } from './file-backend.js';
 import { registerExecBackend } from '../exec-backend.js';
 import { syncSkillsToHostDir } from './shared.js';
@@ -53,12 +53,13 @@ class HostExecBackend implements ExecBackend {
     );
   }
 
-  async exec(command: string): Promise<ExecResult> {
+  async exec(command: string, opts?: ExecOpts): Promise<ExecResult> {
     const startedAt = Date.now();
+    const cwd = opts?.cwd ?? this.agentHome;
 
     return new Promise<ExecResult>((resolve, reject) => {
       const child = spawn(this.shell, ['-lc', command], {
-        cwd: this.agentHome,
+        cwd,
         env: { ...process.env, ...(this.env ?? {}) },
         stdio: ['ignore', 'pipe', 'pipe'],
       });

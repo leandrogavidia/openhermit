@@ -3,7 +3,7 @@ import path from 'node:path';
 
 import { ValidationError } from '@openhermit/shared';
 
-import type { ExecBackend, ExecResult, SyncSkillEntry, BackendFactoryContext, DaytonaExecBackendConfig } from '../exec-backend.js';
+import type { ExecBackend, ExecOpts, ExecResult, SyncSkillEntry, BackendFactoryContext, DaytonaExecBackendConfig } from '../exec-backend.js';
 import { DaytonaFileBackend } from './file-backend.js';
 import { registerExecBackend } from '../exec-backend.js';
 
@@ -151,7 +151,7 @@ class DaytonaExecBackend implements ExecBackend {
     await this.replayPendingSkillSync();
   }
 
-  async exec(command: string): Promise<ExecResult> {
+  async exec(command: string, opts?: ExecOpts): Promise<ExecResult> {
     if (!this.sandbox) {
       await this.ensure();
     }
@@ -161,7 +161,7 @@ class DaytonaExecBackend implements ExecBackend {
       const timeoutSec = Math.max(1, Math.ceil(this.timeoutMs / 1000));
       const response = await this.sandbox!.process.executeCommand(
         command,
-        this.agentHome,
+        opts?.cwd ?? this.agentHome,
         undefined,
         timeoutSec,
       );
