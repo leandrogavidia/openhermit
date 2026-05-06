@@ -589,10 +589,12 @@ export class TelegramBridge implements ChannelOutbound {
     const approved = pending.decision === 'approved';
 
     try {
-      await this.client.reviewApprovalRequest(pending.requestId, {
+      const reviewInput: Parameters<typeof this.client.reviewApprovalRequest>[1] = {
         decision: pending.decision,
         resolution: 'once',
-      });
+      };
+      if (query.from?.id) reviewInput.channelUserId = String(query.from.id);
+      await this.client.reviewApprovalRequest(pending.requestId, reviewInput);
     } catch (error) {
       const msg = error instanceof Error ? error.message : String(error);
       this.log(`async approval review failed: ${msg}`);

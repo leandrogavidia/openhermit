@@ -374,10 +374,11 @@ export const resolveAuth = async (
     const channel = options.channels.resolveByKey(bearerToken);
     if (channel) {
       const namespace = options.channels.getNamespace(channel);
+      const headerUserId = request.headers.get('x-channel-user-id') ?? '';
       return {
         mode: 'channel',
         channel: namespace,
-        channelUserId: '', // filled per-message from sender field
+        channelUserId: headerUserId,
         channelNamespace: namespace,
         agentId: channel.agentId,
       };

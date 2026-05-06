@@ -115,9 +115,11 @@ export class AgentLocalClient {
 
   async reviewApprovalRequest(
     requestId: string,
-    input: { decision: 'approved' | 'rejected'; resolution?: 'once' | 'persistent'; reason?: string },
+    input: { decision: 'approved' | 'rejected'; resolution?: 'once' | 'persistent'; reason?: string; channelUserId?: string },
   ): Promise<unknown> {
-    return this.postJson(`/approvals/${encodeURIComponent(requestId)}/review`, input);
+    const { channelUserId, ...body } = input;
+    const headers = channelUserId ? { 'x-channel-user-id': channelUserId } : undefined;
+    return this.postJson(`/approvals/${encodeURIComponent(requestId)}/review`, body, headers);
   }
 
   async postMessageSync(
@@ -242,7 +244,7 @@ export class AgentLocalClient {
     return (await response.json()) as T;
   }
 
-  private async postJson<T>(path: string, body: unknown): Promise<T> {
+  private async postJson<T>(path: string, body: unknown, extraHeaders?: Record<string, string>): Promise<T> {
     let response: Response;
 
     try {
@@ -251,6 +253,7 @@ export class AgentLocalClient {
         headers: {
           authorization: `Bearer ${this.options.token}`,
           'content-type': 'application/json',
+          ...extraHeaders,
         },
         body: JSON.stringify(body),
       });
