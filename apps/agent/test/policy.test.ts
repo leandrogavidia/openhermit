@@ -5,6 +5,7 @@ import {
   buildPrincipal,
   canAccess,
   matchesGrant,
+  resolveExecGrants,
   resolveFilePathGrants,
   resolveToolGrants,
   type Grant,
@@ -259,5 +260,71 @@ test('resolveFilePathGrants: no matching path denies', () => {
     scope: { sandbox: 'primary', mode: 'read', path: '/workspace/public/' },
   }];
   const grants = resolveFilePathGrants(rows, 'primary', 'read', '/workspace/private/foo.txt');
+  assert.deepEqual(grants, []);
+});
+
+// ── resolveExecGrants ─────────────────────────────────────────────────
+
+test('resolveExecGrants: returns undefined when no exec rows', () => {
+  assert.equal(resolveExecGrants([], 'primary', 'git status'), undefined);
+});
+
+test('resolveExecGrants: wildcard command allows anything', () => {
+  const rows: PolicyRow[] = [{
+    agentId: 'a', resourceType: 'exec', resourceKey: 'primary:*',
+    grants: [{ type: 'role', value: 'owner' }],
+    scope: { sandbox: 'primary', command: '*' },
+  }];
+  const grants = resolveExecGrants(rows, 'primary', 'rm -rf /');
+  assert.deepEqual(grants, [{ type: 'role', value: 'owner' }]);
+});
+
+test('resolveExecGrants: exact command match', () => {
+  const rows: PolicyRow[] = [{
+    agentId: 'a', resourceType: 'exec', resourceKey: 'primary:git status',
+    grants: [{ type: 'any' }],
+    scope: { sandbox: 'primary', command: 'git status' },
+  }];
+  const grants = resolveExecGrants(rows, 'primary', 'git status');
+  assert.deepEqual(grants, [{ type: 'any' }]);
+});
+
+test('resolveExecGrants: normalizes whitespace', () => {
+  const rows: PolicyRow[] = [{
+    agentId: 'a', resourceType: 'exec', resourceKey: 'primary:git status',
+    grants: [{ type: 'any' }],
+    scope: { sandbox: 'primary', command: 'git status' },
+  }];
+  const grants = resolveExecGrants(rows, 'primary', '  git  status  ');
+  assert.deepEqual(grants, [{ type: 'any' }]);
+});
+
+test('resolveExecGrants: different command denied', () => {
+  const rows: PolicyRow[] = [{
+    agentId: 'a', resourceType: 'exec', resourceKey: 'primary:git status',
+    grants: [{ type: 'any' }],
+    scope: { sandbox: 'primary', command: 'git status' },
+  }];
+  const grants = resolveExecGrants(rows, 'primary', 'git push');
+  assert.deepEqual(grants, []);
+});
+
+test('resolveExecGrants: wildcard sandbox matches any', () => {
+  const rows: PolicyRow[] = [{
+    agentId: 'a', resourceType: 'exec', resourceKey: '*:*',
+    grants: [{ type: 'role', value: 'owner' }],
+    scope: { sandbox: '*', command: '*' },
+  }];
+  const grants = resolveExecGrants(rows, 'any-sandbox', 'ls');
+  assert.deepEqual(grants, [{ type: 'role', value: 'owner' }]);
+});
+
+test('resolveExecGrants: sandbox mismatch denied', () => {
+  const rows: PolicyRow[] = [{
+    agentId: 'a', resourceType: 'exec', resourceKey: 'primary:git status',
+    grants: [{ type: 'any' }],
+    scope: { sandbox: 'primary', command: 'git status' },
+  }];
+  const grants = resolveExecGrants(rows, 'other', 'git status');
   assert.deepEqual(grants, []);
 });

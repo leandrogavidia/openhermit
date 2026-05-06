@@ -141,6 +141,36 @@ export const resolveFilePathGrants = (
   return [];
 };
 
+// ── Exec command policy ────────────────────────────────────────────────
+
+const normalizeCommand = (cmd: string): string =>
+  cmd.trim().replace(/\s+/g, ' ');
+
+/**
+ * Resolve exec command-level grants. Returns undefined if no exec policy
+ * rows exist (caller should fall back to tool-level policy). Returns Grant[]
+ * if a matching row is found. Returns empty [] (deny) if rows exist but none match.
+ */
+export const resolveExecGrants = (
+  execRows: PolicyRow[],
+  sandbox: string,
+  command: string,
+): Grant[] | undefined => {
+  if (execRows.length === 0) return undefined;
+
+  const normalized = normalizeCommand(command);
+
+  for (const row of execRows) {
+    const s = row.scope;
+    if (typeof s.sandbox !== 'string' || typeof s.command !== 'string') continue;
+    if (s.sandbox !== '*' && s.sandbox !== sandbox) continue;
+    if (s.command === '*') return row.grants as Grant[];
+    if (normalizeCommand(s.command) === normalized) return row.grants as Grant[];
+  }
+
+  return [];
+};
+
 export const buildPrincipal = (
   agentId: string,
   userId?: string,
