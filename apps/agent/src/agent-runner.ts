@@ -1133,7 +1133,8 @@ export class AgentRunner implements SessionRuntime {
           type: 'approval_pending',
           sessionId: targetSession.sessionId,
           requestId,
-          toolName: resourceKey,
+          resourceType,
+          resourceKey,
           requesterId,
           requesterSessionId,
           mode: 'async',
@@ -1678,14 +1679,16 @@ export class AgentRunner implements SessionRuntime {
                 void eventBroker.publish({
                   type: 'approval_requested',
                   sessionId,
-                  toolName: t.name,
+                  resourceType: 'tool',
+                  resourceKey: t.name,
                   toolCallId,
                   mode: 'realtime',
                 });
                 void eventBroker.publish({
                   type: 'approval_pending',
                   sessionId,
-                  toolName: t.name,
+                  resourceType: 'tool',
+                  resourceKey: t.name,
                   requesterId: userId ?? 'unknown',
                   requesterSessionId: sessionId,
                   mode: 'realtime',
@@ -1720,7 +1723,8 @@ export class AgentRunner implements SessionRuntime {
                     type: 'approval_requested',
                     sessionId,
                     requestId: request.id,
-                    toolName: t.name,
+                    resourceType: 'tool',
+                    resourceKey: t.name,
                     toolCallId,
                     mode: 'async',
                   });

@@ -137,15 +137,17 @@ export type OutboundEvent =
       type: 'approval_requested';
       sessionId: string;
       requestId?: string;
-      toolName: string;
-      toolCallId: string;
+      resourceType: string;
+      resourceKey: string;
+      toolCallId?: string;
       mode: 'realtime' | 'async';
     }
   | {
       type: 'approval_pending';
       sessionId: string;
       requestId?: string;
-      toolName: string;
+      resourceType: string;
+      resourceKey: string;
       requesterId: string;
       requesterSessionId: string;
       mode: 'realtime' | 'async';
