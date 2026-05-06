@@ -2286,15 +2286,37 @@ export const createGatewayApp = (options: GatewayAppOptions): Hono => {
       throw new ValidationError('grants must be an array');
     }
     const effect = typeof body.effect === 'string' ? body.effect : 'allow';
+
+    let scope: Record<string, unknown> =
+      (typeof body.scope === 'object' && body.scope !== null && !Array.isArray(body.scope))
+        ? body.scope as Record<string, unknown>
+        : {};
+
+    // Auto-populate scope for file policies when not explicitly provided
+    if (body.resourceType === 'file' && (!scope.path || !scope.mode)) {
+      scope = {
+        sandbox: typeof scope.sandbox === 'string' ? scope.sandbox : '*',
+        mode: typeof scope.mode === 'string' ? scope.mode : '*',
+        path: typeof scope.path === 'string' ? scope.path : body.resourceKey,
+      };
+    }
+
+    // Auto-populate scope for exec policies when not explicitly provided
+    if (body.resourceType === 'exec' && (!scope.command)) {
+      scope = {
+        sandbox: typeof scope.sandbox === 'string' ? scope.sandbox : '*',
+        command: typeof scope.command === 'string' ? scope.command : body.resourceKey,
+        ...(typeof scope.cwd === 'string' ? { cwd: scope.cwd } : {}),
+      };
+    }
+
     const record = await store.upsert({
       agentId,
       resourceType: body.resourceType,
       resourceKey: body.resourceKey,
       effect: effect as import('@openhermit/store').PolicyEffect,
       grants: body.grants,
-      scope: (typeof body.scope === 'object' && body.scope !== null && !Array.isArray(body.scope))
-        ? body.scope as Record<string, unknown>
-        : {},
+      scope,
     });
     return c.json(record, 201);
   });

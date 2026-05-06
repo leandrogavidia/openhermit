@@ -119,6 +119,8 @@ function CreatePolicyDialog({ onClose, onCreated }: { onClose: () => void; onCre
   const [useCustom, setUseCustom] = useState(false);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState('');
+  const [fileMode, setFileMode] = useState<'*' | 'read' | 'write'>('*');
+  const [filePath, setFilePath] = useState('');
 
   useEffect(() => { dialogRef.current?.showModal(); }, []);
 
@@ -126,7 +128,9 @@ function CreatePolicyDialog({ onClose, onCreated }: { onClose: () => void; onCre
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    const key = resourceKey.trim();
+
+    const isFile = resourceType === 'file';
+    const key = isFile ? filePath.trim() : resourceKey.trim();
     if (!key) return;
 
     let grants: Array<{ type: string; value?: string }>;
@@ -142,10 +146,14 @@ function CreatePolicyDialog({ onClose, onCreated }: { onClose: () => void; onCre
       grants = GRANT_PRESETS[preset]!.grants;
     }
 
+    const scope = isFile
+      ? { sandbox: '*', mode: fileMode, path: key }
+      : undefined;
+
     setBusy(true);
     setErr('');
     try {
-      await upsertPolicy({ resourceType, resourceKey: key, effect, grants });
+      await upsertPolicy({ resourceType, resourceKey: key, effect, grants, scope });
       onClose();
       onCreated();
     } catch (error) {
@@ -171,17 +179,46 @@ function CreatePolicyDialog({ onClose, onCreated }: { onClose: () => void; onCre
             ))}
           </select>
         </label>
-        <label className="manage__field">
-          <span className="manage__field-label">Resource key</span>
-          <input
-            className="manage__field-input"
-            required
-            value={resourceKey}
-            onChange={(e) => setResourceKey(e.target.value)}
-            placeholder={currentType.placeholder}
-            disabled={busy}
-          />
-        </label>
+        {resourceType === 'file' ? (
+          <>
+            <label className="manage__field">
+              <span className="manage__field-label">File path (prefix)</span>
+              <input
+                className="manage__field-input"
+                required
+                value={filePath}
+                onChange={(e) => setFilePath(e.target.value)}
+                placeholder="e.g. /root/notes.md, /home/user/"
+                disabled={busy}
+              />
+            </label>
+            <label className="manage__field">
+              <span className="manage__field-label">Mode</span>
+              <select
+                className="manage__field-input"
+                value={fileMode}
+                onChange={(e) => setFileMode(e.target.value as '*' | 'read' | 'write')}
+                disabled={busy}
+              >
+                <option value="*">Any (read + write)</option>
+                <option value="read">Read only</option>
+                <option value="write">Write only</option>
+              </select>
+            </label>
+          </>
+        ) : (
+          <label className="manage__field">
+            <span className="manage__field-label">Resource key</span>
+            <input
+              className="manage__field-input"
+              required
+              value={resourceKey}
+              onChange={(e) => setResourceKey(e.target.value)}
+              placeholder={currentType.placeholder}
+              disabled={busy}
+            />
+          </label>
+        )}
 
         <label className="manage__field">
           <span className="manage__field-label">Effect</span>

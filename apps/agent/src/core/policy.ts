@@ -172,7 +172,7 @@ export type FileMode = 'read' | 'write';
 
 interface FileScope {
   sandbox: string;
-  mode: FileMode;
+  mode: string;
   path: string;
 }
 
@@ -181,7 +181,7 @@ const parseFileScope = (row: PolicyRow): FileScope | undefined => {
   if (typeof s.sandbox !== 'string' || typeof s.mode !== 'string' || typeof s.path !== 'string') {
     return undefined;
   }
-  return { sandbox: s.sandbox, mode: s.mode as FileMode, path: s.path };
+  return { sandbox: s.sandbox, mode: s.mode, path: s.path };
 };
 
 /**
@@ -202,24 +202,14 @@ export const resolveFilePathMatches = (
 
   for (const row of fileRows) {
     const scope = parseFileScope(row);
-    if (scope) {
-      if (scope.mode !== mode) continue;
-      if (scope.sandbox !== '*' && scope.sandbox !== sandbox) continue;
-      if (!path.startsWith(scope.path)) continue;
-      const effect = (row.effect ?? 'allow') as PolicyEffect;
-      const existing = bestByEffect.get(effect);
-      if (!existing || scope.path.length > existing.len) {
-        bestByEffect.set(effect, { row, len: scope.path.length });
-      }
-    } else {
-      // Fallback: match resource_key as a path prefix (any sandbox/mode)
-      const key = row.resourceKey;
-      if (!path.startsWith(key)) continue;
-      const effect = (row.effect ?? 'allow') as PolicyEffect;
-      const existing = bestByEffect.get(effect);
-      if (!existing || key.length > existing.len) {
-        bestByEffect.set(effect, { row, len: key.length });
-      }
+    if (!scope) continue;
+    if (scope.mode !== '*' && scope.mode !== mode) continue;
+    if (scope.sandbox !== '*' && scope.sandbox !== sandbox) continue;
+    if (!path.startsWith(scope.path)) continue;
+    const effect = (row.effect ?? 'allow') as PolicyEffect;
+    const existing = bestByEffect.get(effect);
+    if (!existing || scope.path.length > existing.len) {
+      bestByEffect.set(effect, { row, len: scope.path.length });
     }
   }
 
