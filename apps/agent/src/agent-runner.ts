@@ -1661,6 +1661,19 @@ export class AgentRunner implements SessionRuntime {
         return {
           ...t,
           execute: async (toolCallId: string, args: unknown, signal?: AbortSignal, onUpdate?: any) => {
+            // Real-time approval: owner interactive session with ApprovalGate
+            if (input.approvalCallback) {
+              const decision = await input.approvalCallback(t.name, toolCallId, args);
+              if (decision === 'rejected' || decision === 'timed_out' || decision === 'cancelled') {
+                return {
+                  content: [{ type: 'text' as const, text: `Tool "${t.name}" was ${decision} by the user.` }],
+                  details: { rejected: true, decision },
+                };
+              }
+              return t.execute(toolCallId, args, signal, onUpdate);
+            }
+
+            // Async approval: create a persistent request for owner to review
             if (approvalStore && userId) {
               const resourceKey = t.name;
               const approved = await approvalStore.findApproved(agentId, userId, 'tool', resourceKey);
