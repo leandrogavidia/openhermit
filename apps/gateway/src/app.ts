@@ -2260,7 +2260,7 @@ export const createGatewayApp = (options: GatewayAppOptions): Hono => {
 
   app.post('/api/agents/:agentId/schedules', async (c) => {
     const agentId = c.req.param('agentId') ?? '';
-    await requireOwnerOrAdmin(c, agentId);
+    const auth = await requireOwnerOrAdmin(c, agentId);
     const store = requireScheduleStore();
     const body = await c.req.json() as Record<string, unknown>;
     if (!body.type || (body.type !== 'cron' && body.type !== 'once')) {
@@ -2275,6 +2275,37 @@ export const createGatewayApp = (options: GatewayAppOptions): Hono => {
     if (body.type === 'once' && (!body.runAt || typeof body.runAt !== 'string')) {
       throw new ValidationError('runAt is required for once schedules');
     }
+
+    // Resolve creator identity. Owner-mode requests use auth.userId.
+    // Admin-mode has no userId, so default to the agent's earliest owner
+    // (deterministic) — otherwise scheduled runs fall through to guest.
+    // Callers may override via body.createdBy; we validate the override
+    // has a role on this agent so it can't be used to impersonate.
+    let createdBy: string | undefined;
+    if (typeof body.createdBy === 'string' && body.createdBy.length > 0) {
+      if (!userStore) {
+        throw new OpenHermitError('User store is not configured.', 'not_configured', 500);
+      }
+      const role = await userStore.getAgentRole({ agentId }, body.createdBy);
+      if (!role) {
+        throw new ValidationError(`createdBy user ${body.createdBy} has no role on agent ${agentId}`);
+      }
+      createdBy = body.createdBy;
+    } else if (auth.userId) {
+      createdBy = auth.userId;
+    } else if (userStore) {
+      const members = await userStore.listByAgent({ agentId });
+      const owners = members
+        .filter((m) => m.role === 'owner')
+        .sort((a, b) => a.createdAt.localeCompare(b.createdAt));
+      createdBy = owners[0]?.userId;
+    }
+    if (!createdBy) {
+      throw new ValidationError(
+        `Cannot determine schedule owner for agent ${agentId}: no owner found. Pass createdBy in the request body.`,
+      );
+    }
+
     const schedule = await store.create({ agentId }, {
       ...(typeof body.id === 'string' ? { scheduleId: body.id } : {}),
       type: body.type as 'cron' | 'once',
@@ -2283,10 +2314,8 @@ export const createGatewayApp = (options: GatewayAppOptions): Hono => {
       prompt: body.prompt,
       ...(body.delivery ? { delivery: body.delivery as any } : {}),
       ...(body.policy ? { policy: body.policy as any } : {}),
-      createdBy: 'owner',
+      createdBy,
     });
-    const runner = instances.getRunner(agentId);
-    if (runner) await runner.reloadScheduler();
     return c.json(schedule, 201);
   });
 
@@ -2305,8 +2334,6 @@ export const createGatewayApp = (options: GatewayAppOptions): Hono => {
     if (typeof body.runAt === 'string') patch.runAt = body.runAt;
     if (body.delivery !== undefined) patch.delivery = body.delivery;
     const updated = await store.update({ agentId }, scheduleId, patch as any);
-    const runner = instances.getRunner(agentId);
-    if (runner) await runner.reloadScheduler();
     return c.json(updated);
   });
 
@@ -2318,8 +2345,6 @@ export const createGatewayApp = (options: GatewayAppOptions): Hono => {
     const existing = await store.get({ agentId }, scheduleId);
     if (!existing) throw new NotFoundError(`Schedule not found: ${scheduleId}`);
     await store.delete({ agentId }, scheduleId);
-    const runner = instances.getRunner(agentId);
-    if (runner) await runner.reloadScheduler();
     return c.json({ ok: true });
   });
 
@@ -2330,9 +2355,10 @@ export const createGatewayApp = (options: GatewayAppOptions): Hono => {
     const scheduleId = c.req.param('scheduleId');
     const existing = await store.get({ agentId }, scheduleId);
     if (!existing) throw new NotFoundError(`Schedule not found: ${scheduleId}`);
+    // "Trigger now" — flip to active and force next_run_at to now so
+    // the central scheduler fires it on the next tick.
     await store.update({ agentId }, scheduleId, { status: 'active' } as any);
-    const runner = instances.getRunner(agentId);
-    if (runner) await runner.reloadScheduler();
+    await store.setNextRun({ agentId }, scheduleId, new Date().toISOString());
     return c.json({ ok: true, triggered: scheduleId });
   });
 
