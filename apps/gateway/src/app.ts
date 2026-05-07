@@ -299,8 +299,10 @@ export const createGatewayApp = (options: GatewayAppOptions): Hono => {
   const requireOwnerOrAdmin = async (c: any, agentId: string): Promise<AuthContext> => {
     const auth = requireAuth(c, agentId);
     if (auth.mode === 'admin') return auth;
-    const runtime = instances.getRunner(agentId);
-    if (!runtime) throw new NotFoundError(`Agent ${agentId} is not running.`);
+    // Hydrate on demand: the agent may be persistently active but
+    // currently evicted from memory. Owner role checks must still work.
+    const runtime = await instances.getOrHydrate(agentId);
+    if (!runtime) throw new NotFoundError(`Agent ${agentId} is not available.`);
     const role = await runtime.resolveCallerRole({ channel: auth.channel, channelUserId: auth.channelUserId });
     if (role !== 'owner') throw new UnauthorizedError('Owner role required.');
     return auth;
@@ -459,13 +461,17 @@ export const createGatewayApp = (options: GatewayAppOptions): Hono => {
       // Enrich with agent display info from agentStore.
       const records = agentStore ? await agentStore.list() : [];
       const byId = new Map(records.map((r) => [r.agentId, r]));
+      // `status` reflects the agent's persistent availability, not whether
+      // it currently has an in-memory runner — with lazy hydration + LRU
+      // eviction, an evicted agent is still available to chat (re-hydrates
+      // on demand).
       const result = memberships.map((m) => {
         const rec = byId.get(m.agentId);
         return {
           agentId: m.agentId,
           role: m.role,
           ...(rec?.name ? { name: rec.name } : {}),
-          status: instances.getRunner(m.agentId) ? 'running' as const : 'stopped' as const,
+          status: rec?.status === 'active' ? 'running' as const : 'stopped' as const,
         };
       });
       return c.json(result);
@@ -695,7 +701,8 @@ export const createGatewayApp = (options: GatewayAppOptions): Hono => {
       const records = await agentStore.list();
       const agents = records.map((record) => ({
         agentId: record.agentId,
-        status: instances.getRunner(record.agentId) ? 'running' as const : 'stopped' as const,
+        // Persistent availability — see /api/users/me/agents above.
+        status: record.status === 'active' ? 'running' as const : 'stopped' as const,
         ...(record.name ? { name: record.name } : {}),
         workspaceDir: record.workspaceDir,
       }));
@@ -1322,7 +1329,6 @@ export const createGatewayApp = (options: GatewayAppOptions): Hono => {
       const stat = stats.get(record.agentId) ?? {
         sessions24h: 0, errors24h: 0, skillsCount: 0, mcpCount: 0,
       };
-      const runner = instances.getRunner(record.agentId);
       const channelStatuses = instances.getChannelStatuses(record.agentId);
       const channelsEnabled = channelStatuses
         .filter((s) => s.status === 'connected')
@@ -1330,7 +1336,7 @@ export const createGatewayApp = (options: GatewayAppOptions): Hono => {
       return {
         agentId: record.agentId,
         ...(record.name ? { name: record.name } : {}),
-        status: runner ? 'running' as const : 'stopped' as const,
+        status: record.status === 'active' ? 'running' as const : 'stopped' as const,
         sessions24h: stat.sessions24h,
         errors24h: stat.errors24h,
         ...(stat.lastActivity ? { lastActivity: stat.lastActivity } : {}),
@@ -1520,7 +1526,7 @@ export const createGatewayApp = (options: GatewayAppOptions): Hono => {
     return c.json({
       agentId,
       name: record?.name ?? agentId,
-      status: instances.getRunner(agentId) ? 'running' : 'stopped',
+      status: record?.status === 'active' ? 'running' : 'stopped',
     });
   });
 

@@ -364,6 +364,26 @@ export const main = async (): Promise<void> => {
     logStartup('central scheduler skipped (no schedule store)');
   }
 
+  // LRU eviction: scan hydrated runners every minute, stop ones that
+  // have been idle past the TTL with no active channels and no live WS
+  // subscribers. OPENHERMIT_EVICTION_TTL_MINUTES=0 disables eviction.
+  const evictionTTLMinutes = (() => {
+    const raw = process.env.OPENHERMIT_EVICTION_TTL_MINUTES;
+    if (raw === undefined) return 30;
+    const parsed = Number.parseInt(raw, 10);
+    return Number.isFinite(parsed) ? parsed : 30;
+  })();
+  if (evictionTTLMinutes > 0) {
+    instances.startEviction({
+      idleTTLMs: evictionTTLMinutes * 60_000,
+      tickIntervalMs: 60_000,
+      log: logStartup,
+    });
+    logStartup(`LRU eviction enabled (idle TTL ${evictionTTLMinutes}m)`);
+  } else {
+    logStartup('LRU eviction disabled');
+  }
+
   const rawPort = process.env.GATEWAY_PORT ?? process.env.PORT;
   const port = rawPort ? Number.parseInt(rawPort, 10) : 4000;
 
@@ -448,6 +468,7 @@ export const main = async (): Promise<void> => {
     logStartup('shutting down...');
 
     await centralScheduler?.stop();
+    instances.stopEviction();
     await instances.stopAll();
     await agentStore?.close();
     await skillStore?.close();
