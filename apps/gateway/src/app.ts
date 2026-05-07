@@ -188,7 +188,7 @@ const enforceSessionNamespace = (auth: AuthContext, sessionId: string): void => 
  */
 const requireSessionAccessHttp = async (
   auth: AuthContext,
-  runtime: ReturnType<typeof resolveRunner>,
+  runtime: AgentRunner,
   sessionId: string,
 ): Promise<string | undefined> => {
   if (auth.mode === 'admin') return undefined;
@@ -232,13 +232,19 @@ export interface GatewayAppOptions {
 
 // ─── Resolve runner helper ────────────────────────────────────────────────────
 
-const resolveRunner = (
+/**
+ * Resolve a runner for a request handler. Lazily hydrates the agent if
+ * `agents.status = 'active'` and no runner is in memory; rejects with
+ * 404 if the agent doesn't exist or is disabled. Concurrent callers for
+ * the same cold agent share one hydration via the manager's single-flight.
+ */
+const resolveRunner = async (
   instances: AgentInstanceManager,
   agentId: string,
-): AgentRunner => {
-  const runner = instances.getRunner(agentId);
+): Promise<AgentRunner> => {
+  const runner = await instances.getOrHydrate(agentId);
   if (!runner) {
-    throw new NotFoundError(`Agent ${agentId} is not running.`);
+    throw new NotFoundError(`Agent ${agentId} is not available.`);
   }
   return runner;
 };
@@ -727,6 +733,7 @@ export const createGatewayApp = (options: GatewayAppOptions): Hono => {
       agentId: body.agentId,
       ...(body.name ? { name: body.name } : {}),
       workspaceDir: body.workspaceDir ?? `${homeDir}/workspaces/${body.agentId}`,
+      status: 'active',
       createdAt: now,
       updatedAt: now,
     });
@@ -899,6 +906,9 @@ export const createGatewayApp = (options: GatewayAppOptions): Hono => {
 
     switch (action) {
       case 'start': {
+        if (record.status !== 'active') {
+          throw new ValidationError(`Agent ${agentId} is disabled. Run \`hermit agents enable ${agentId}\` first.`);
+        }
         if (instances.getRunner(agentId)) {
           throw new ValidationError(`Agent ${agentId} is already running.`);
         }
@@ -912,23 +922,47 @@ export const createGatewayApp = (options: GatewayAppOptions): Hono => {
       }
 
       case 'restart': {
+        if (record.status !== 'active') {
+          throw new ValidationError(`Agent ${agentId} is disabled. Run \`hermit agents enable ${agentId}\` first.`);
+        }
         await instances.stop(agentId);
         await instances.start(agentId, record.workspaceDir);
         return c.json({ agentId, status: 'running' });
       }
 
       case 'delete': {
+        if (record.status !== 'disabled') {
+          throw new ValidationError(`Agent ${agentId} must be disabled before deletion. Run \`hermit agents disable ${agentId}\` first.`);
+        }
         if (instances.getRunner(agentId)) {
-          throw new ValidationError(`Agent ${agentId} is still running. Stop it first.`);
+          await instances.stop(agentId);
         }
         await agentStore.delete(agentId);
         log(`agent deleted: ${agentId}`);
         return c.json({ agentId, status: 'deleted' });
       }
 
+      case 'enable': {
+        const updated = await agentStore.setStatus(agentId, 'active');
+        log(`agent enabled: ${agentId}`);
+        return c.json({ agentId, status: updated?.status ?? 'active' });
+      }
+
+      case 'disable': {
+        await agentStore.setStatus(agentId, 'disabled');
+        // Actively evict the runner so the change takes effect immediately.
+        // No multi-gateway propagation here yet — single-gateway deployment
+        // assumed for v1; LISTEN/NOTIFY can be wired later.
+        if (instances.getRunner(agentId)) {
+          await instances.stop(agentId);
+        }
+        log(`agent disabled: ${agentId}`);
+        return c.json({ agentId, status: 'disabled' });
+      }
+
       default:
         throw new ValidationError(
-          `Unknown lifecycle action: ${action}. Valid actions: start, stop, restart, delete`,
+          `Unknown lifecycle action: ${action}. Valid actions: start, stop, restart, delete, enable, disable`,
         );
     }
   });
@@ -938,7 +972,7 @@ export const createGatewayApp = (options: GatewayAppOptions): Hono => {
   app.post(gatewayRoutes.agentSessionsPattern, async (c) => {
     const agentId = c.req.param('agentId') ?? '';
     const auth = requireAuth(c, agentId);
-    const runtime = resolveRunner(instances, agentId);
+    const runtime = await resolveRunner(instances, agentId);
     const payload = await c.req.json().catch(() => null);
 
     if (!isSessionSpec(payload)) {
@@ -961,7 +995,7 @@ export const createGatewayApp = (options: GatewayAppOptions): Hono => {
   app.get(gatewayRoutes.agentSessionsPattern, async (c) => {
     const agentId = c.req.param('agentId') ?? '';
     const auth = requireAuth(c, agentId);
-    const runtime = resolveRunner(instances, agentId);
+    const runtime = await resolveRunner(instances, agentId);
     const query = parseSessionListQuery(c.req.raw);
     return c.json(await listSessionsForCaller(runtime, auth, query));
   });
@@ -973,7 +1007,7 @@ export const createGatewayApp = (options: GatewayAppOptions): Hono => {
     const sessionId = c.req.param('sessionId') ?? '';
     const auth = requireAuth(c, agentId);
     enforceSessionNamespace(auth, sessionId);
-    const runtime = resolveRunner(instances, agentId);
+    const runtime = await resolveRunner(instances, agentId);
 
     // Verify caller is a participant (user mode only; channels handle identity per-message)
     if (auth.mode === 'user') {
@@ -1159,7 +1193,7 @@ export const createGatewayApp = (options: GatewayAppOptions): Hono => {
     const sessionId = c.req.param('sessionId') ?? '';
     const auth = requireAuth(c, agentId);
     enforceSessionNamespace(auth, sessionId);
-    const runtime = resolveRunner(instances, agentId);
+    const runtime = await resolveRunner(instances, agentId);
 
     if (auth.mode === 'admin') {
       return c.json(await runtime.listSessionMessages(sessionId));
@@ -1178,7 +1212,7 @@ export const createGatewayApp = (options: GatewayAppOptions): Hono => {
     const sessionId = c.req.param('sessionId') ?? '';
     const approveAuth = requireAuth(c, agentId);
     enforceSessionNamespace(approveAuth, sessionId);
-    const runtime = resolveRunner(instances, agentId);
+    const runtime = await resolveRunner(instances, agentId);
     await requireSessionAccessHttp(approveAuth, runtime, sessionId);
     const payload = await c.req.json().catch(() => null);
 
@@ -1202,7 +1236,7 @@ export const createGatewayApp = (options: GatewayAppOptions): Hono => {
     const sessionId = c.req.param('sessionId') ?? '';
     const cpAuth = requireAuth(c, agentId);
     enforceSessionNamespace(cpAuth, sessionId);
-    const runtime = resolveRunner(instances, agentId);
+    const runtime = await resolveRunner(instances, agentId);
     await requireSessionAccessHttp(cpAuth, runtime, sessionId);
     const payload = await c.req.json().catch(() => ({}));
 
@@ -1225,7 +1259,7 @@ export const createGatewayApp = (options: GatewayAppOptions): Hono => {
     const sessionId = c.req.param('sessionId') ?? '';
     const auth = requireAuth(c, agentId);
     enforceSessionNamespace(auth, sessionId);
-    const runtime = resolveRunner(instances, agentId);
+    const runtime = await resolveRunner(instances, agentId);
     const callerUserId = await runtime.resolveCallerUserId({ channel: auth.channel, channelUserId: auth.channelUserId });
     await runtime.deleteSession(sessionId, callerUserId ?? undefined);
     return c.json({ deleted: true });
@@ -1238,7 +1272,7 @@ export const createGatewayApp = (options: GatewayAppOptions): Hono => {
     const sessionId = c.req.param('sessionId') ?? '';
     const auth = requireAuth(c, agentId);
     enforceSessionNamespace(auth, sessionId);
-    const runtime = resolveRunner(instances, agentId);
+    const runtime = await resolveRunner(instances, agentId);
     // Verify caller is a participant (user mode only; channels use namespace enforcement above).
     if (auth.mode === 'user') {
       await requireSessionAccessHttp(auth, runtime, sessionId);
