@@ -81,7 +81,10 @@ class DaytonaExecBackend implements ExecBackend {
     this.image = config.image;
     this.timeoutMs = config.timeout_ms ?? DAYTONA_DEFAULT_TIMEOUT_MS;
     this.autoStopMinutes = config.auto_stop_interval_minutes ?? DAYTONA_DEFAULT_AUTO_STOP_MINUTES;
-    this.envVars = config.env;
+    // Pass-through secrets are read fresh on every exec via the provider so
+    // toggles take effect without recreating the sandbox. Only static,
+    // agent-defined env is baked in at create time.
+    this.envVars = config.env && Object.keys(config.env).length > 0 ? config.env : undefined;
     this.resources = config.resources;
     this.username = config.username ?? DAYTONA_DEFAULT_USERNAME;
     this.agentHome = config.agent_home ?? DAYTONA_DEFAULT_AGENT_HOME;
@@ -160,10 +163,11 @@ class DaytonaExecBackend implements ExecBackend {
     const startedAt = Date.now();
     try {
       const timeoutSec = Math.max(1, Math.ceil(this.timeoutMs / 1000));
+      const passEnv = (await this.context.passThroughEnvProvider?.()) ?? {};
       const response = await this.sandbox!.process.executeCommand(
         command,
         opts?.cwd ?? this.agentHome,
-        undefined,
+        Object.keys(passEnv).length > 0 ? passEnv : undefined,
         timeoutSec,
       );
       const output = response.result ?? '';

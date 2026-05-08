@@ -120,6 +120,13 @@ export interface BackendFactoryContext {
   containerManager: DockerContainerManager;
   agentId: string;
   workspaceDir: string;
+  /**
+   * Live fetch of per-agent secrets flagged `passThrough: true`. Backends
+   * call this on every exec to pick up additions/removals/edits without
+   * recreating the sandbox. Returns env-var-name → value; should be cheap
+   * (one DB roundtrip via SecretStore.listEntries).
+   */
+  passThroughEnvProvider?: () => Promise<Record<string, string>>;
   getRuntimeState?: () => Promise<Record<string, unknown> | null>;
   setRuntimeState?: (state: Record<string, unknown>) => Promise<void>;
   markActive?: (patch: {

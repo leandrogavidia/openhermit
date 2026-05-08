@@ -267,6 +267,7 @@ export class AgentRunner implements SessionRuntime {
       containerManager: this.containerManager,
       agentId: this.scope.agentId,
       workspaceDir: this.options.workspace.root,
+      passThroughEnvProvider: () => this.options.security.getPassThroughEnv(),
     };
 
     if (this.options.sandboxStore) {
