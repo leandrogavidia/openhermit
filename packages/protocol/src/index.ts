@@ -75,6 +75,9 @@ export interface SessionHistoryMessage {
   /** Per-message metadata supplied by the caller on user turns. Persisted
    *  alongside the log entry; surfaced for plugins/tools, not the model. */
   metadata?: Record<string, unknown>;
+  /** Inline interactive affordances rendered with this message
+   *  (e.g. approval Approve/Reject buttons on owner inbox notifications). */
+  actions?: ChannelMessageAction[];
 }
 
 export type SessionStatus = 'idle' | 'running' | 'awaiting_approval' | 'inactive';
@@ -539,6 +542,7 @@ export type WsErrorCode =
   | 'SESSION_NOT_FOUND'
   | 'NOT_SUBSCRIBED'
   | 'UNAUTHORIZED'
+  | 'INBOX_READ_ONLY'
   | 'INTERNAL_ERROR';
 
 export interface WsEvent {

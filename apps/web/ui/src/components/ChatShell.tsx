@@ -1,5 +1,5 @@
 import { lazy, Suspense, useCallback, useEffect, useRef, useState } from 'react';
-import { AgentWsClient, fetchAgentInfo, getDisplayName, getUserId, type Connection, type SessionSummary, type HistoryMessage, type OutboundEvent } from '../api';
+import { AgentWsClient, apiFetch, fetchAgentInfo, getDisplayName, getUserId, type Connection, type SessionSummary, type HistoryMessage, type OutboundEvent } from '../api';
 import { SessionList } from './SessionList';
 import { ChatMessages, type ChatItem } from './ChatMessages';
 import { Composer } from './Composer';
@@ -64,6 +64,28 @@ export function ChatShell({ connection, role, onDisconnect }: Props) {
   const thinkingAsAssistantRef = useRef(false);
   const skipPushRef = useRef(false);
   const pendingSentTexts = useRef<string[]>([]);
+
+  // Inbox badge: track open approval requests + last-seen timestamp.
+  // pendingRef maps requestId → ts the inbox row was created. seenAtRef is
+  // the last time the user opened the inbox; anything with ts > seenAt is
+  // unread. Persisted in localStorage so the badge survives reloads.
+  const inboxSeenKey = `inbox-seen-at:${connection.agentId}`;
+  const [inboxUnread, setInboxUnread] = useState(0);
+  const inboxPendingRef = useRef<Map<string, string>>(new Map());
+  const inboxSeenAtRef = useRef<string>(localStorage.getItem(inboxSeenKey) ?? '');
+  const recomputeInboxBadge = useCallback(() => {
+    const seenAt = inboxSeenAtRef.current;
+    let count = 0;
+    for (const ts of inboxPendingRef.current.values()) {
+      if (!seenAt || ts > seenAt) count += 1;
+    }
+    setInboxUnread(count);
+  }, []);
+  const markInboxSeen = useCallback(() => {
+    inboxSeenAtRef.current = new Date().toISOString();
+    localStorage.setItem(inboxSeenKey, inboxSeenAtRef.current);
+    setInboxUnread(0);
+  }, [inboxSeenKey]);
 
   currentSessionRef.current = currentSessionId;
 
@@ -168,11 +190,33 @@ export function ChatShell({ connection, role, onDisconnect }: Props) {
         continue;
       }
       if (entry.role === 'error') { historyItems.push({ type: 'event', text: entry.content, isError: true }); continue; }
+      // Resolution follow-up: assistant message carrying
+      // metadata.resolvedRequestId. Mark the prior assistant message's
+      // actions resolved instead of pushing a duplicate body — the
+      // resolution status renders on the original message.
+      if (entry.role === 'assistant' && entry.metadata && typeof entry.metadata.resolvedRequestId === 'string') {
+        const reqId = entry.metadata.resolvedRequestId;
+        const decision = entry.metadata.decision;
+        for (let i = historyItems.length - 1; i >= 0; i--) {
+          const it = historyItems[i];
+          if (it.type === 'assistant' && it.actions?.some(a => a.type === 'approval_review' && a.requestId === reqId)) {
+            historyItems[i] = { ...it, actionsResolved: true, actionsApproved: decision === 'approved' };
+            break;
+          }
+        }
+        continue;
+      }
       if (entry.role === 'assistant' && entry.thinking) {
         historyItems.push({ type: 'thinking', text: entry.thinking, streaming: false });
       }
       if (entry.role === 'assistant' && !entry.content) { if (entry.name) setAgentName(entry.name); continue; }
-      historyItems.push({ type: entry.role as 'user' | 'assistant', text: entry.content, streaming: false, name: entry.name });
+      historyItems.push({
+        type: entry.role as 'user' | 'assistant',
+        text: entry.content,
+        streaming: false,
+        name: entry.name,
+        ...(entry.role === 'assistant' && entry.actions && entry.actions.length > 0 ? { actions: entry.actions } : {}),
+      });
       if (entry.role === 'assistant' && entry.name) setAgentName(entry.name);
     }
     flushIntrospection();
@@ -181,7 +225,8 @@ export function ChatShell({ connection, role, onDisconnect }: Props) {
     const allSessions = await ws.listSessions();
     const sess = allSessions.find(s => s.sessionId === sessionId);
     await ws.subscribe(sessionId, sess?.lastEventId ?? 0);
-  }, []);
+    if (sessionId === 'inbox') markInboxSeen();
+  }, [markInboxSeen]);
 
   const selectSessionById = useCallback(async (sessionId: string) => {
     const ws = wsRef.current;
@@ -200,6 +245,22 @@ export function ChatShell({ connection, role, onDisconnect }: Props) {
   }, [loadSession]);
 
   const handleEvent = useCallback((_eventId: number, sessionId: string, event: OutboundEvent) => {
+    // Inbox runs a side-channel subscription independent of the visible
+    // session so we can keep the sidebar badge live. Update tracking state
+    // here before deciding whether the chat view also wants the event.
+    if (sessionId === 'inbox') {
+      const reqId = typeof event.requestId === 'string' ? event.requestId : undefined;
+      if (event.type === 'approval_pending' && reqId) {
+        if (!inboxPendingRef.current.has(reqId)) {
+          inboxPendingRef.current.set(reqId, new Date().toISOString());
+        }
+        if (currentSessionRef.current === 'inbox') markInboxSeen();
+        else recomputeInboxBadge();
+      } else if (event.type === 'approval_resolved' && reqId) {
+        inboxPendingRef.current.delete(reqId);
+        recomputeInboxBadge();
+      }
+    }
     if (sessionId !== currentSessionRef.current) return;
 
     const dropPlaceholder = (items: ChatItem[]) => items.filter(i => !(i.type === 'thinking' && !i.text));
@@ -304,6 +365,47 @@ export function ChatShell({ connection, role, onDisconnect }: Props) {
           resolved: false,
         }]);
         break;
+
+      case 'approval_pending': {
+        const requestId = (event.requestId as string) || '';
+        const shortId = typeof event.shortId === 'number' ? event.shortId : Number(event.shortId);
+        const requesterId = (event.requesterId as string) || 'unknown';
+        const resourceType = (event.resourceType as string) || 'tool';
+        const resourceKey = (event.resourceKey as string) || '';
+        const text = `🔔 Approval required\n\n`
+          + `User \`${requesterId}\` needs approval for ${resourceType}/${resourceKey}.\n`
+          + `Request ID: ${requestId}`;
+        setItems(prev => {
+          // Replay safety: subscribe(lastEventId=0) on inbox replays the
+          // approval_pending event we already rendered from history.
+          const dup = prev.some(i => i.type === 'assistant'
+            && i.actions?.some(a => a.type === 'approval_review' && a.requestId === requestId));
+          if (dup) return prev;
+          return [...collapseThinking(dropPlaceholder(prev)), {
+            type: 'assistant',
+            text,
+            streaming: false,
+            actions: [{ type: 'approval_review', requestId, shortId }],
+          }];
+        });
+        break;
+      }
+
+      case 'approval_resolved': {
+        const reqId = event.requestId as string | undefined;
+        const decision = event.decision as 'approved' | 'rejected' | undefined;
+        if (!reqId) break;
+        setItems(prev => prev.map(item => {
+          if (item.type === 'assistant' && item.actions?.some(a => a.type === 'approval_review' && a.requestId === reqId)) {
+            return { ...item, actionsResolved: true, actionsApproved: decision === 'approved' };
+          }
+          if (item.type === 'approval' && item.toolCallId === reqId) {
+            return { ...item, resolved: true, approved: decision === 'approved' };
+          }
+          return item;
+        }));
+        break;
+      }
 
       case 'text_delta':
         streamingTextRef.current += event.text as string;
@@ -421,6 +523,27 @@ export function ChatShell({ connection, role, onDisconnect }: Props) {
     }
   }, [refreshSessions]);
 
+  const handleMessageAction = useCallback(async (action: { type: string; [k: string]: unknown }, approved: boolean) => {
+    if (action.type !== 'approval_review') return;
+    const shortId = typeof action.shortId === 'number' ? action.shortId : Number(action.shortId);
+    const requestId = typeof action.requestId === 'string' ? action.requestId : undefined;
+    if (!Number.isFinite(shortId)) return;
+    try {
+      await apiFetch(`/approvals/by-short/${shortId}/review`, {
+        method: 'POST',
+        body: { decision: approved ? 'approved' : 'rejected', resolution: 'once' },
+      });
+      setItems(prev => prev.map(item =>
+        item.type === 'assistant'
+          && item.actions?.some(a => a.type === 'approval_review' && a.requestId === requestId)
+          ? { ...item, actionsResolved: true, actionsApproved: approved }
+          : item
+      ));
+    } catch (error) {
+      setItems(prev => [...prev, { type: 'event', text: error instanceof Error ? error.message : String(error), isError: true }]);
+    }
+  }, []);
+
   const handleApproval = useCallback(async (toolCallId: string, approved: boolean) => {
     const ws = wsRef.current;
     const sessionId = currentSessionRef.current;
@@ -459,10 +582,31 @@ export function ChatShell({ connection, role, onDisconnect }: Props) {
           fetchAgentInfo().then(info => setAgentName(info.name)).catch(() => {}),
         ]);
         setSessions(list);
+        // Owner-side inbox side-channel: prime pending set from history,
+        // then subscribe so live approval_pending events update the badge
+        // even when the user is not viewing /chat/inbox.
+        if (isOwner) {
+          try {
+            const history = await client.getHistory('inbox');
+            for (const m of history) {
+              const reqId = m.actions?.find(a => a.type === 'approval_review')?.requestId as string | undefined;
+              if (reqId) inboxPendingRef.current.set(reqId, m.ts ?? '');
+              const resolvedId = m.metadata?.resolvedRequestId as string | undefined;
+              if (resolvedId) inboxPendingRef.current.delete(resolvedId);
+            }
+            recomputeInboxBadge();
+            await client.subscribe('inbox', 0);
+          } catch {
+            // owner without inbox row, or transient — badge stays at 0.
+          }
+        }
         // Only auto-load when the URL itself names a valid session.
         // Refreshing /  ̄or any non-/chat/:id path keeps the user on the
         // sessions list — don't jump them into a session they didn't pick.
-        if (initialSessionId && list.some((s: SessionSummary) => s.sessionId === initialSessionId)) {
+        // Inbox is intentionally hidden from listSessions, so it never
+        // satisfies the .some() check — load it directly when the URL
+        // names it.
+        if (initialSessionId && (initialSessionId === 'inbox' || list.some((s: SessionSummary) => s.sessionId === initialSessionId))) {
           await loadSession(client, initialSessionId);
         }
       })
@@ -472,12 +616,15 @@ export function ChatShell({ connection, role, onDisconnect }: Props) {
       client.close();
       wsRef.current = null;
     };
-  }, [handleEvent, loadSession]);
+  }, [handleEvent, loadSession, isOwner, recomputeInboxBadge]);
 
+  const isInbox = currentSessionId === 'inbox';
   const currentSession = sessions.find(s => s.sessionId === currentSessionId);
-  const sessionTitle = currentSession?.description || currentSession?.lastMessagePreview || currentSessionId || 'No session';
+  const sessionTitle = isInbox
+    ? 'Inbox'
+    : (currentSession?.description || currentSession?.lastMessagePreview || currentSessionId || 'No session');
   const isWebSession = !currentSession || currentSession.source?.kind === 'api' && currentSession.source?.platform === 'web';
-  const readOnly = currentSession != null && !isWebSession;
+  const readOnly = isInbox || (currentSession != null && !isWebSession);
 
   // On mobile, only one of sidebar / detail shows at a time. "List" mode
   // is when the user is in chat view but hasn't selected a session yet;
@@ -497,25 +644,49 @@ export function ChatShell({ connection, role, onDisconnect }: Props) {
     <div className={`shell shell--${mobileMode}`}>
       <aside className="sidebar">
         <div className="sidebar__top">
-          <a
-            className="sidebar__brand"
-            href="/"
-            aria-label="OpenHermit home"
-            onClick={(e) => {
-              e.preventDefault();
-              setView('chat');
-              setCurrentSessionId(null);
-              if (window.location.pathname !== '/') {
-                history.pushState(null, '', '/');
-              }
-            }}
-          >
-            <img src="/logo.png" alt="" className="sidebar__logo" />
-            <div>
-              <h1 className="sidebar__brand-name">OpenHermit</h1>
-              <p className="sidebar__meta">Agent: {agentName || connection.agentId}</p>
-            </div>
-          </a>
+          <div className="sidebar__brand-row">
+            <a
+              className="sidebar__brand"
+              href="/"
+              aria-label="OpenHermit home"
+              onClick={(e) => {
+                e.preventDefault();
+                setView('chat');
+                setCurrentSessionId(null);
+                if (window.location.pathname !== '/') {
+                  history.pushState(null, '', '/');
+                }
+              }}
+            >
+              <img src="/logo.png" alt="" className="sidebar__logo" />
+              <div>
+                <h1 className="sidebar__brand-name">OpenHermit</h1>
+                <p className="sidebar__meta">Agent: {agentName || connection.agentId}</p>
+              </div>
+            </a>
+            {isOwner && (
+              <button
+                type="button"
+                className={`sidebar__icon-btn${currentSessionId === 'inbox' && view === 'chat' ? ' is-active' : ''}`}
+                aria-label="Inbox"
+                title="Inbox"
+                onClick={() => {
+                  if (view === 'manage') setView('chat');
+                  void selectSessionById('inbox');
+                }}
+              >
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                  <rect x="3" y="5" width="18" height="14" rx="2" />
+                  <path d="m3 7 9 6 9-6" />
+                </svg>
+                {inboxUnread > 0 && (
+                  <span className="sidebar__icon-badge" aria-label={`${inboxUnread} unread`}>
+                    {inboxUnread > 99 ? '99+' : inboxUnread}
+                  </span>
+                )}
+              </button>
+            )}
+          </div>
           <div className="sidebar__buttons">
             <button
               className="btn btn--primary"
@@ -601,11 +772,22 @@ export function ChatShell({ connection, role, onDisconnect }: Props) {
               <p className="chat__status">{status}</p>
             </header>
 
-            <ChatMessages items={items} agentName={agentName ?? undefined} loading={loadingHistory} onApproval={handleApproval} />
+            <ChatMessages
+              items={items}
+              agentName={agentName ?? undefined}
+              loading={loadingHistory}
+              emptyMessage={isInbox ? 'No notifications yet.' : undefined}
+              onApproval={handleApproval}
+              onMessageAction={handleMessageAction}
+            />
 
             {readOnly ? (
               <div className="composer composer--readonly">
-                <span>Read-only — this session was created via {currentSession.source?.platform || currentSession.source?.kind || 'another channel'}</span>
+                <span>
+                  {isInbox
+                    ? 'Read-only — inbox is the owner notification feed'
+                    : `Read-only — this session was created via ${currentSession?.source?.platform || currentSession?.source?.kind || 'another channel'}`}
+                </span>
               </div>
             ) : (
               <Composer onSend={sendMessage} disabled={sending || !currentSessionId} />

@@ -33,6 +33,12 @@ const mapEventRowToHistoryMessage = (row: {
     if (typeof payload?.model === 'string') message.model = payload.model;
     if (typeof payload?.stopReason === 'string') message.stopReason = payload.stopReason;
     if (typeof payload?.thinking === 'string') message.thinking = payload.thinking;
+    if (Array.isArray(payload?.actions)) {
+      message.actions = payload.actions as NonNullable<SessionHistoryMessage['actions']>;
+    }
+    if (payload && typeof payload.metadata === 'object' && payload.metadata !== null && !Array.isArray(payload.metadata)) {
+      message.metadata = payload.metadata as Record<string, unknown>;
+    }
     return message;
   }
 

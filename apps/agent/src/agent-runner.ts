@@ -626,8 +626,12 @@ export class AgentRunner implements SessionRuntime {
     // in-memory map only holds runtime handles (Agent instance, queue,
     // timers); summary fields (source, metadata, counters, status,
     // description, preview) all come from the persisted row.
+    // Inbox is a system-only session (owner-attention feed); hide it
+     // from default listings — the web UI accesses it via a dedicated
+     // route. See docs/inbox-design.md.
+    const visible = persistedSessions.filter((s) => s.sessionId !== 'inbox');
     const summaries = buildSessionSummaries(
-      persistedSessions,
+      visible,
       query,
       (sessionId) => this.events.getBacklog(sessionId).at(-1)?.id ?? 0,
     );
@@ -639,6 +643,12 @@ export class AgentRunner implements SessionRuntime {
   async verifySessionAccess(sessionId: string, callerUserId: string): Promise<void> {
     const role = await this.store.users.getAgentRole(this.scope, callerUserId);
     if (role === 'owner') return;
+
+    // Inbox is owner-only by design — non-owners get the same
+    // not-found response as any other unauthorized session.
+    if (sessionId === 'inbox') {
+      throw new NotFoundError(`Session not found: ${sessionId}`);
+    }
 
     const persisted = await this.store.sessions.get(this.scope, sessionId);
     if (!persisted || !persisted.userIds?.includes(callerUserId)) {
@@ -1091,37 +1101,39 @@ export class AgentRunner implements SessionRuntime {
   }
 
   private makeNotifyOwnerApproval(): ((requestId: string, shortId: number, resourceType: string, resourceKey: string, requesterId: string, requesterSessionId: string, args?: unknown) => Promise<void>) | undefined {
-    if (this.channelOutbound.size === 0) return undefined;
-
     return async (requestId, shortId, resourceType, resourceKey, requesterId, requesterSessionId, args) => {
       try {
-        const config = await this.options.security.readConfig();
-        const notif = config.notifications;
-        if (!notif) return;
+        const text = `🔔 Approval required\n\n`
+          + `User \`${requesterId}\` needs approval for ${resourceType}/${resourceKey}.\n`
+          + `Request ID: ${requestId}`;
 
-        let targetSession: import('@openhermit/store').PersistedSessionIndexEntry | undefined;
-
-        if (notif.session_id) {
-          targetSession = await this.store.sessions.get(this.scope, notif.session_id) ?? undefined;
-        } else if (notif.channel) {
-          const members = await this.store.users.listByAgent(this.scope);
-          const ownerIds = new Set(members.filter((m) => m.role === 'owner').map((m) => m.userId));
-
-          const allSessions = await this.store.sessions.list(this.scope, { includeInactive: false });
-          const ownerSessions = allSessions
-            .filter((s) =>
-              s.source.platform === notif.channel
-              && s.userIds?.some((uid) => ownerIds.has(uid)),
-            )
-            .sort((a, b) => b.lastActivityAt.localeCompare(a.lastActivityAt));
-          targetSession = ownerSessions[0];
+        // 1. Canonical write: per-agent inbox session. Always.
+        // The inbox row is eagerly created at agent register time;
+        // we route the existing `approval_pending` wire event to
+        // sessionId='inbox' and persist a matching log entry.
+        const ts = new Date().toISOString();
+        try {
+          await this.store.messages.appendLogEntry(this.scope, 'inbox', {
+            ts,
+            role: 'assistant',
+            content: text,
+            actions: [{ type: 'approval_review', requestId, shortId }],
+            metadata: {
+              requesterId,
+              requesterSessionId,
+              resourceType,
+              resourceKey,
+              requestId,
+              shortId,
+              ...(args !== undefined ? { args } : {}),
+            },
+          });
+        } catch (err) {
+          console.error('[approval] failed to persist inbox approval_requested', err);
         }
-
-        if (!targetSession) return;
-
         void this.events.publish({
           type: 'approval_pending',
-          sessionId: targetSession.sessionId,
+          sessionId: 'inbox',
           requestId,
           resourceType,
           resourceKey,
@@ -1131,20 +1143,54 @@ export class AgentRunner implements SessionRuntime {
           mode: 'async',
         });
 
+        // 2. Secondary best-effort push to configured channels (e.g.
+        // telegram). If the owner has no live session on that channel
+        // yet, the push is silently skipped — inbox remains the
+        // canonical sink.
+        if (this.channelOutbound.size === 0) return;
+        const config = await this.options.security.readConfig();
+        const notif = config.notifications;
+        if (!notif) return;
+
+        const channels = new Set<string>(notif.channels ?? []);
+        // Legacy single-channel target.
+        if (notif.channel) channels.add(notif.channel);
+
+        if (channels.size === 0 && !notif.session_id) return;
+
+        const members = await this.store.users.listByAgent(this.scope);
+        const ownerIds = new Set(members.filter((m) => m.role === 'owner').map((m) => m.userId));
+        const allSessions = await this.store.sessions.list(this.scope, { includeInactive: false });
         const { resolveOutbound } = await import('./tools/session.js');
-        const outbound = resolveOutbound(targetSession, this.channelOutbound);
-        if (!outbound) return;
 
-        const text = `🔔 Approval required\n\n`
-          + `User \`${requesterId}\` needs approval for ${resourceType}/${resourceKey}.\n`
-          + `Request ID: ${requestId}`;
+        const targets: import('@openhermit/store').PersistedSessionIndexEntry[] = [];
 
-        await outbound.adapter.send({
-          sessionId: targetSession.sessionId,
-          to: outbound.to,
-          text,
-          actions: [{ type: 'approval_review', requestId, shortId }],
-        });
+        if (notif.session_id) {
+          const explicit = await this.store.sessions.get(this.scope, notif.session_id);
+          if (explicit) targets.push(explicit);
+        }
+
+        for (const channel of channels) {
+          const ownerSessions = allSessions
+            .filter((s) => s.source.platform === channel && s.userIds?.some((uid) => ownerIds.has(uid)))
+            .sort((a, b) => b.lastActivityAt.localeCompare(a.lastActivityAt));
+          if (ownerSessions[0]) targets.push(ownerSessions[0]);
+        }
+
+        for (const target of targets) {
+          const outbound = resolveOutbound(target, this.channelOutbound);
+          if (!outbound) continue;
+          try {
+            await outbound.adapter.send({
+              sessionId: target.sessionId,
+              to: outbound.to,
+              text,
+              actions: [{ type: 'approval_review', requestId, shortId }],
+            });
+          } catch (err) {
+            console.error('[approval] secondary push failed', err);
+          }
+        }
       } catch {
         // Best-effort — don't break the tool call if notification fails.
       }
@@ -1218,6 +1264,52 @@ export class AgentRunner implements SessionRuntime {
     }
   }
 
+  /**
+   * Fan out an `approval_resolved` event + log entry to both the
+   * requester's session (so the agent can unblock / retry) and the
+   * inbox (so the owner UI marks the card done). Used by the gateway
+   * HTTP review endpoint, called by telegram callback buttons and the
+   * web inbox.
+   */
+  async publishApprovalResolved(payload: {
+    requestId: string;
+    resourceType: string;
+    resourceKey: string;
+    requesterSessionId?: string | undefined;
+    decision: 'approved' | 'rejected';
+    resolution?: 'once' | 'persistent' | undefined;
+    reviewerId?: string | undefined;
+  }): Promise<void> {
+    const baseEvent = {
+      type: 'approval_resolved' as const,
+      requestId: payload.requestId,
+      resourceType: payload.resourceType,
+      resourceKey: payload.resourceKey,
+      decision: payload.decision,
+      ...(payload.resolution ? { resolution: payload.resolution } : {}),
+      ...(payload.reviewerId ? { reviewerId: payload.reviewerId } : {}),
+      mode: 'async' as const,
+    };
+
+    void this.events.publish({ ...baseEvent, sessionId: 'inbox' });
+    if (payload.requesterSessionId && payload.requesterSessionId !== 'unknown') {
+      void this.events.publish({ ...baseEvent, sessionId: payload.requesterSessionId });
+    }
+
+    const targets = ['inbox' as const, ...(payload.requesterSessionId && payload.requesterSessionId !== 'unknown' ? [payload.requesterSessionId] : [])];
+    for (const sessionId of targets) {
+      await this.recordApprovalResolved(sessionId, {
+        requestId: payload.requestId,
+        resourceType: payload.resourceType,
+        resourceKey: payload.resourceKey,
+        decision: payload.decision,
+        ...(payload.resolution ? { resolution: payload.resolution } : {}),
+        ...(payload.reviewerId ? { reviewerId: payload.reviewerId } : {}),
+        mode: 'async',
+      });
+    }
+  }
+
   private async recordApprovalResolved(
     sessionId: string,
     payload: {
@@ -1235,6 +1327,27 @@ export class AgentRunner implements SessionRuntime {
     const session = this.sessions.get(sessionId);
     const write = async () => {
       try {
+        if (sessionId === 'inbox') {
+          // Inbox is a chat with the owner — render the resolution as a
+          // follow-up assistant message that the renderer can use to
+          // decommission the prior approval card.
+          const verb = payload.decision === 'approved' ? '✅ Approved' : '✗ Rejected';
+          const content = `${verb} by owner: ${payload.resourceType}/${payload.resourceKey}.`;
+          await this.store.messages.appendLogEntry(this.scope, sessionId, {
+            ts,
+            role: 'assistant',
+            content,
+            metadata: {
+              resolvedRequestId: payload.requestId,
+              resourceType: payload.resourceType,
+              resourceKey: payload.resourceKey,
+              decision: payload.decision,
+              ...(payload.resolution ? { resolution: payload.resolution } : {}),
+              ...(payload.reviewerId ? { reviewerId: payload.reviewerId } : {}),
+            },
+          });
+          return;
+        }
         await this.store.messages.appendLogEntry(this.scope, sessionId, {
           ts,
           role: 'system',

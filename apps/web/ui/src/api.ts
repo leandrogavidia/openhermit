@@ -54,6 +54,8 @@ export interface HistoryMessage {
   introspection?: boolean;
   introspectionPhase?: 'start' | 'end';
   introspectionSummary?: string;
+  actions?: { type: string; [key: string]: unknown }[];
+  metadata?: Record<string, unknown>;
 }
 
 export interface OutboundEvent {
