@@ -1,3 +1,5 @@
+import path from 'node:path';
+
 import { Type, type Static } from '@mariozechner/pi-ai';
 import { ValidationError } from '@openhermit/shared';
 
@@ -94,6 +96,25 @@ type FileDeleteArgs = Static<typeof FileDeleteParams>;
 /** 5 MiB. Beyond this, results blow the model context budget. */
 const MAX_READ_BYTES = 5 * 1024 * 1024;
 
+/**
+ * Skill files live under `<agentHome>/.openhermit/skills/` and are required
+ * reading for the agent to actually use a skill. Path-based file policies
+ * commonly forbid reads under `~/.openhermit/`, so without an exception the
+ * agent gets blocked and can't follow its own SKILL.md instructions.
+ *
+ * Anchor the check to the backend's agentHome rather than matching the
+ * substring anywhere in the path — that way an unrelated path that happens
+ * to contain `.openhermit/skills/` (e.g. a user-supplied workspace tree)
+ * doesn't silently inherit the bypass.
+ */
+const isSkillPath = (backend: ExecBackend, rawPath: string): boolean => {
+  if (!path.posix.isAbsolute(rawPath)) return false;
+  const normalized = path.posix.normalize(rawPath);
+  if (normalized.split('/').includes('..')) return false;
+  const skillsRoot = `${backend.agentHome.replace(/\/$/, '')}/.openhermit/skills/`;
+  return normalized.startsWith(skillsRoot);
+};
+
 const resolveBackend = (context: ToolContext, alias?: string): ExecBackend => {
   if (!context.execBackendManager) {
     throw new ValidationError('File tools are unavailable: no execution backend configured for this agent.');
@@ -148,9 +169,12 @@ export const createFileReadTool = (context: ToolContext): PolicyAwareTool<typeof
   parameters: FileReadParams,
   execute: async (_id, args: FileReadArgs) => {
     const backend = resolveBackend(context, args.sandbox);
-    await checkFilePath(context, backend.id, 'read', args.path, args);
+    const skillRead = isSkillPath(backend, args.path);
+    if (!skillRead) {
+      await checkFilePath(context, backend.id, 'read', args.path, args);
+    }
     const { data } = await backend.files.read(args.path);
-    if (data.byteLength > MAX_READ_BYTES && !args.offset && !args.limit) {
+    if (!skillRead && data.byteLength > MAX_READ_BYTES && !args.offset && !args.limit) {
       throw new ValidationError(
         `File is ${data.byteLength.toLocaleString()} bytes; exceeds the ${MAX_READ_BYTES.toLocaleString()} byte cap. Use offset/limit to read a range, or exec for very large files.`,
       );
@@ -160,7 +184,9 @@ export const createFileReadTool = (context: ToolContext): PolicyAwareTool<typeof
     if (encoding === 'base64') {
       const content = data.toString('base64');
       return {
-        content: asTextContent(content),
+        content: skillRead
+          ? [{ type: 'text' as const, text: content }]
+          : asTextContent(content),
         details: { path: args.path, sandbox: backend.id, size: data.byteLength, encoding },
       };
     }
@@ -174,13 +200,16 @@ export const createFileReadTool = (context: ToolContext): PolicyAwareTool<typeof
     const endIdx = args.limit != null ? Math.min(startIdx + args.limit, totalLines) : totalLines;
     const selectedLines = allLines.slice(startIdx, endIdx);
 
-    // Number each line so the agent can reference positions.
-    const numbered = selectedLines
-      .map((line, i) => `${startIdx + i + 1}\t${line}`)
-      .join('\n');
+    // Number each line so the agent can reference positions. Skill files are
+    // returned verbatim — line numbers would just be noise in SKILL.md.
+    const rendered = skillRead
+      ? selectedLines.join('\n')
+      : selectedLines.map((line, i) => `${startIdx + i + 1}\t${line}`).join('\n');
 
     return {
-      content: asTextContent(numbered),
+      content: skillRead
+        ? [{ type: 'text' as const, text: rendered }]
+        : asTextContent(rendered),
       details: {
         path: args.path,
         sandbox: backend.id,
