@@ -3,7 +3,14 @@ import { promises as fs } from 'node:fs';
 import path from 'node:path';
 import { test } from 'node:test';
 
-import { parseFrontmatter, scanSkillDirectory, loadSkillIndex, formatSkillsPromptSection } from '../src/skills.js';
+import {
+  parseFrontmatter,
+  scanSkillDirectory,
+  loadSkillIndex,
+  formatSkillsPromptSection,
+  isSkillPath,
+  isSkillReadResult,
+} from '../src/skills.js';
 import type { SkillIndexEntry } from '../src/skills.js';
 import { createTempDir } from './helpers.js';
 
@@ -151,12 +158,111 @@ test('formatSkillsPromptSection returns undefined for empty list', () => {
   assert.equal(formatSkillsPromptSection([]), undefined);
 });
 
-test('formatSkillsPromptSection formats skills as markdown', () => {
+test('formatSkillsPromptSection formats skills as available_skills XML', () => {
   const skills: SkillIndexEntry[] = [
     { id: 'test', name: 'Test', description: 'A test', path: '/skills/test', source: 'system' },
   ];
   const section = formatSkillsPromptSection(skills)!;
   assert.ok(section.includes('## Skills'));
-  assert.ok(section.includes('**Test**'));
-  assert.ok(section.includes('cat /skills/test/SKILL.md'));
+  // Structured <location> field — model copies path verbatim instead of
+  // reconstructing it from prose, which closes off path-hallucination.
+  assert.ok(section.includes('<available_skills>'));
+  assert.ok(section.includes('<name>Test</name>'));
+  assert.ok(section.includes('<description>A test</description>'));
+  assert.ok(section.includes('<location>/skills/test/SKILL.md</location>'));
+  // Anti-hallucination steer (borrowed from openclaw): the model must use
+  // the location value verbatim and not invent paths.
+  assert.ok(section.includes('never guess, fabricate, or hard-code'));
+  // Skill-aware read steering preserved from prior fix: `file_read` only,
+  // never `exec cat`, since cat output is head+tail-previewed and
+  // unrecoverable across session resumes. The anti-cat steer must appear
+  // in the prose, and there must be no per-skill `cat <path>` listing.
+  assert.ok(section.includes('file_read'));
+  assert.ok(section.includes('Do not use `exec cat`'));
+  assert.ok(!section.includes('cat /skills/test/SKILL.md'));
+});
+
+// ── isSkillPath ──────────────────────────────────────────────────────────
+
+test('isSkillPath matches paths anchored under <agentHome>/.openhermit/skills/', () => {
+  assert.equal(isSkillPath('/home/user/.openhermit/skills/system/demo/SKILL.md', '/home/user'), true);
+  assert.equal(isSkillPath('/home/user/.openhermit/skills/wechat/SKILL.md', '/home/user'), true);
+});
+
+test('isSkillPath tolerates a trailing slash on agentHome', () => {
+  assert.equal(isSkillPath('/home/user/.openhermit/skills/x/SKILL.md', '/home/user/'), true);
+});
+
+test('isSkillPath rejects paths outside the skills root', () => {
+  assert.equal(isSkillPath('/home/user/notes.txt', '/home/user'), false);
+  assert.equal(isSkillPath('/etc/passwd', '/home/user'), false);
+});
+
+test('isSkillPath rejects paths with .. segments (no traversal bypass)', () => {
+  assert.equal(
+    isSkillPath('/home/user/.openhermit/skills/../../etc/passwd', '/home/user'),
+    false,
+  );
+});
+
+test('isSkillPath rejects relative paths', () => {
+  assert.equal(isSkillPath('.openhermit/skills/demo/SKILL.md', '/home/user'), false);
+});
+
+test('isSkillPath rejects paths that only superficially contain the skills prefix', () => {
+  // /home/userX/.openhermit/skills/... must NOT match agentHome=/home/user.
+  assert.equal(
+    isSkillPath('/home/userX/.openhermit/skills/demo/SKILL.md', '/home/user'),
+    false,
+  );
+});
+
+// ── isSkillReadResult ────────────────────────────────────────────────────
+
+test('isSkillReadResult: only file_read on a skill path qualifies', () => {
+  const skillPath = '/home/user/.openhermit/skills/system/demo/SKILL.md';
+  assert.equal(
+    isSkillReadResult('file_read', { path: skillPath }, '/home/user'),
+    true,
+  );
+});
+
+test('isSkillReadResult rejects non-file_read tools even with a skill path in details', () => {
+  // A different tool (or a future one) cannot smuggle a result past the
+  // head+tail preview by claiming to have read a skill file.
+  const skillPath = '/home/user/.openhermit/skills/system/demo/SKILL.md';
+  assert.equal(
+    isSkillReadResult('exec', { path: skillPath }, '/home/user'),
+    false,
+  );
+});
+
+test('isSkillReadResult rejects file_read on a non-skill path', () => {
+  assert.equal(
+    isSkillReadResult('file_read', { path: '/home/user/notes.txt' }, '/home/user'),
+    false,
+  );
+});
+
+test('isSkillReadResult rejects when agentHome is undefined', () => {
+  // Before any backend is initialized the runner can't classify — fail
+  // safe to the truncating path rather than silently bypassing.
+  const skillPath = '/home/user/.openhermit/skills/system/demo/SKILL.md';
+  assert.equal(isSkillReadResult('file_read', { path: skillPath }, undefined), false);
+});
+
+test('isSkillReadResult rejects malformed details', () => {
+  assert.equal(isSkillReadResult('file_read', null, '/home/user'), false);
+  assert.equal(isSkillReadResult('file_read', 'string-details', '/home/user'), false);
+  assert.equal(isSkillReadResult('file_read', { path: 42 }, '/home/user'), false);
+  assert.equal(isSkillReadResult('file_read', {}, '/home/user'), false);
+});
+
+test('formatSkillsPromptSection escapes XML special chars in name/description', () => {
+  const skills: SkillIndexEntry[] = [
+    { id: 'x', name: 'A & B', description: 'Has <angle> & chars', path: '/skills/x', source: 'system' },
+  ];
+  const section = formatSkillsPromptSection(skills)!;
+  assert.ok(section.includes('<name>A &amp; B</name>'));
+  assert.ok(section.includes('<description>Has &lt;angle&gt; &amp; chars</description>'));
 });
