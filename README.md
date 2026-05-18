@@ -229,22 +229,17 @@ Important environment variables:
 | `OPENHERMIT_GATEWAY_URL` | Gateway URL, default `http://127.0.0.1:4000` |
 | `OPENHERMIT_AGENT_ID` | Default CLI agent ID, default `main` |
 | `OPENHERMIT_WEB_PORT` | End-user web app port, default `4310` |
-| `OPENHERMIT_ATTACHMENT_ROOT` | Local attachment storage root, default `~/.openhermit/attachments` |
-| `OPENHERMIT_ATTACHMENT_MAX_BYTES` | Hard upload size cap, default `26214400` (25 MB) |
 | `AWS_ACCESS_KEY_ID` / `AWS_SECRET_ACCESS_KEY` / `AWS_REGION` | Standard AWS credential chain — used when `attachments.storage.provider = s3` |
+| `SUPABASE_URL` | Supabase project URL (e.g. `https://xyz.supabase.co`) — required when `attachments.storage.provider = supabase`. Treated as part of the credential bundle since it embeds the project ID |
 | `SUPABASE_SERVICE_ROLE_KEY` | Required when `attachments.storage.provider = supabase`. Never stored in gateway config |
-| `OPENHERMIT_ATTACHMENT_PROVIDER` | `local` / `s3` / `supabase` — env-based fallback when no `attachments` block is set in `gateway.json` |
-| `OPENHERMIT_ATTACHMENT_S3_BUCKET` / `_REGION` / `_PREFIX` / `_ENDPOINT` | Env-based pointer config for the S3 provider |
-| `OPENHERMIT_ATTACHMENT_SUPABASE_URL` / `_BUCKET` / `_PREFIX` | Env-based pointer config for the Supabase provider |
-| `OPENHERMIT_ATTACHMENT_SUPABASE_SERVICE_KEY` | Alias for `SUPABASE_SERVICE_ROLE_KEY` |
 
 ### Attachment storage backends
 
-The gateway supports three storage providers. The provider is selected in `gateway.json` (or via the admin API), and **credentials live in env, not config**.
+The gateway supports three storage providers. The provider is selected in the gateway config (DB-backed, edited via the admin UI at `/admin/config` — JSON tab — or seeded from `gateway.json` on first boot), and **credentials live in env, not config** — only secrets go in env; non-secret pointers (provider, bucket, region, prefix, endpoint, root) live in the gateway config.
 
 #### Local disk (default)
 
-No config block needed. Falls back to `OPENHERMIT_ATTACHMENT_ROOT` (or `~/.openhermit/attachments`):
+No config block needed; defaults to `~/.openhermit/attachments`. To override the root, set this under `attachments.storage`:
 
 ```json
 {
@@ -273,14 +268,13 @@ Install the SDK on the gateway: `npm install @aws-sdk/client-s3 @aws-sdk/s3-requ
 
 #### Supabase Storage
 
-Install the SDK on the gateway: `npm install @supabase/supabase-js`. Set `SUPABASE_SERVICE_ROLE_KEY` in env.
+Install the SDK on the gateway: `npm install @supabase/supabase-js`. Set `SUPABASE_URL` and `SUPABASE_SERVICE_ROLE_KEY` in env — the project URL embeds the project ID and is treated as part of the credential bundle.
 
 ```json
 {
   "attachments": {
     "storage": {
       "provider": "supabase",
-      "url": "https://xyz.supabase.co",
       "bucket": "attachments",
       "prefix": "agents"
     }
@@ -288,11 +282,7 @@ Install the SDK on the gateway: `npm install @supabase/supabase-js`. Set `SUPABA
 }
 ```
 
-Optional `attachments.limits.maxBytes` overrides the env default from gateway config. Every successful upload is materialized into the sandbox; if the sandbox is down the row is marked `failed` and `attachment_fetch` re-materializes on first read.
-
-#### Env-only configuration
-
-If you'd rather not edit `gateway.json`, the same provider pointers can be supplied via env. Setting `OPENHERMIT_ATTACHMENT_SUPABASE_URL` or `OPENHERMIT_ATTACHMENT_S3_BUCKET` is enough to select the provider; `OPENHERMIT_ATTACHMENT_PROVIDER` lets you pin it explicitly. The env block always loses to an explicit `attachments` block in `gateway.json`.
+Optional `attachments.limits.maxBytes` overrides the default 25 MB cap. Every successful upload is materialized into the sandbox; if the sandbox is down the row is marked `failed` and `attachment_fetch` re-materializes on first read.
 
 ---
 
