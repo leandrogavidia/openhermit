@@ -178,8 +178,9 @@ export class AgentRunner implements SessionRuntime {
   /**
    * Fire a single scheduled job. Called by the central scheduler. The
    * caller owns row bookkeeping (`startRun` / `markRun` / `finishRun`);
-   * this method only opens the session, runs the prompt, and tears the
-   * session down for one-off schedules.
+   * this method opens the session, runs the prompt, and tears the
+   * session down for one-off and ephemeral schedules. `dedicated` cron
+   * schedules keep their session alive across firings.
    */
   async runScheduledJob(schedule: ScheduleRecord, sessionId: string): Promise<void> {
     await this.openSession({
@@ -208,7 +209,11 @@ export class AgentRunner implements SessionRuntime {
     };
     await this.postMessage(sessionId, { text: transformed.prompt, metadata });
 
-    if (schedule.type === 'once') {
+    // Tear down for one-off schedules and for ephemeral cron firings.
+    // Dedicated cron schedules keep history across firings on purpose.
+    const shouldTearDown =
+      schedule.type === 'once' || schedule.sessionMode.kind === 'ephemeral';
+    if (shouldTearDown) {
       const session = this.sessions.get(sessionId);
       if (session) {
         session.status = 'inactive';

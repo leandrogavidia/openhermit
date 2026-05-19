@@ -148,7 +148,14 @@ export class CentralScheduler {
         return;
       }
 
-      const sessionId = `schedule:${fresh.scheduleId}`;
+      // `ephemeral` schedules use a per-firing sessionId so history
+      // doesn't accumulate forever (which previously produced 200K+
+      // input-token turns and runaway cost). `dedicated` reuses one
+      // session across firings — pick this when the agent should
+      // remember context between runs.
+      const sessionId = fresh.sessionMode.kind === 'ephemeral'
+        ? `schedule:${fresh.scheduleId}:${new Date().toISOString().replace(/[:.]/g, '-')}`
+        : `schedule:${fresh.scheduleId}`;
       const run = await this.store.startRun(scope, fresh.scheduleId, sessionId, fresh.prompt);
 
       try {
