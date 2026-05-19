@@ -2425,7 +2425,15 @@ export const createGatewayApp = (options: GatewayAppOptions): Hono => {
    * with the rest of the channels API surface.
    */
   app.get('/api/channel-manifests', async (c) => {
-    requireAuth(c);
+    // In JWT-auth deployments the middleware attaches an AuthContext,
+    // so requireAuth() works. In admin-token-only deployments there is
+    // no middleware, so requireAuth() would 401 every caller; fall back
+    // to the admin-token check that the rest of the admin surface uses.
+    if (options.auth) {
+      requireAuth(c);
+    } else {
+      requireAdmin(c.req.header('authorization'));
+    }
     const out = options.manifestRegistry.all().map((m) => {
       const origin = options.manifestRegistry.originOf(m.key) ?? 'external';
       const def = BUILTIN_CHANNEL_DEFS[m.key];

@@ -16,10 +16,11 @@ These ship inside the CLI binary and are registered automatically:
 
 ## External Plugin Adapters
 
-These are not bundled. Operators install them with `hermit channel install <pkg>` (or `npm install -g <pkg>` followed by adding to `channelPackages`); the gateway dynamic-imports each package at boot:
+Not bundled in the CLI. Operators install them with `hermit channel install <pkg>` (or `npm install -g <pkg>` followed by adding to `channelPackages`); the gateway dynamic-imports each package at boot. No row is auto-seeded on agent create — owners add them via the admin UI's "Add channel" picker.
 
 | Platform | Package | Connection |
 |----------|---------|------------|
+| Signal | `@openhermit/channel-signal` | signal-cli-rest-api WebSocket (`MODE=json-rpc`); QR-link setup wizard |
 | WeChat (personal) | `@openhermit/channel-wechat` | iLink long-poll (`getUpdates`) — text-only v0 |
 
 External plugins follow the same manifest contract as bundled ones — there is no special-case loading path. Adding a new external plugin requires no gateway code change, only a config edit and a restart.
@@ -33,6 +34,7 @@ Adapters keep a current session per external conversation and recover it by list
 | Telegram | `telegram:` | `telegram_chat_id` |
 | Discord | `discord:` | `discord_channel_id` |
 | Slack | `slack:` | `slack_channel_id`, optional `slack_thread_ts` |
+| Signal | `signal:` (DMs by uuid or E.164) / `signal:group:` | `signal_source`, optional `signal_group_id` |
 
 `/new` creates a new generated session ID after checkpointing the previous session with reason `new_session`.
 
