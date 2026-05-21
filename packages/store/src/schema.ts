@@ -1,3 +1,4 @@
+import { sql } from 'drizzle-orm';
 import {
   pgTable,
   text,
@@ -268,7 +269,16 @@ export const userIdentities = pgTable('user_identities', {
 ]);
 
 export const skills = pgTable('skills', {
+  // Storage PK. For source='system' this equals `slug`. For source='user' it
+  // is encoded as `user:<owner_agent_id>:<slug>` so the same slug can coexist
+  // across owners. Consumers should treat this as opaque and use `slug` for
+  // the user-visible identifier (folder name, prompt index).
   id: text('id').primaryKey(),
+  // User-visible identifier — becomes the basename of the synced skill
+  // directory and the id the LLM sees. Unique among system skills; unique
+  // per (owner_agent_id) among user skills (enforced via partial unique
+  // indexes added in migration 0030).
+  slug: text('slug').notNull(),
   name: text('name').notNull(),
   description: text('description').notNull(),
   path: text('path').notNull(),
@@ -283,6 +293,15 @@ export const skills = pgTable('skills', {
   updatedAt: text('updated_at').notNull(),
 }, (table) => [
   index('idx_skills_owner_agent').on(table.ownerAgentId),
+  // Mirrors the partial unique indexes created in migration 0030. Source of
+  // truth lives here so drizzle-kit generate stays consistent with the
+  // applied schema.
+  uniqueIndex('skills_system_slug_unique')
+    .on(table.slug)
+    .where(sql`source = 'system'`),
+  uniqueIndex('skills_user_owner_slug_unique')
+    .on(table.ownerAgentId, table.slug)
+    .where(sql`source = 'user'`),
 ]);
 
 export const agentSkills = pgTable('agent_skills', {
