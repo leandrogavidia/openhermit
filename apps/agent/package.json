@@ -35,6 +35,10 @@
     "./events": {
       "development": "./src/events.ts",
       "default": "./dist/events.js"
+    },
+    "./voice": {
+      "development": "./src/voice.ts",
+      "default": "./dist/voice.js"
     }
   },
   "scripts": {
@@ -50,6 +54,7 @@
     "@openhermit/protocol": "0.2.0",
     "@openhermit/shared": "0.2.0",
     "@openhermit/store": "0.2.0",
+    "@openhermit/voice": "0.2.0",
     "croner": "^10.0.1",
     "defuddle": "^0.11.0",
     "e2b": "^2.19.4",
