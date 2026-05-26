@@ -73,14 +73,18 @@ class BaileysLinkSession implements WhatsAppLinkSession {
 
   async start(): Promise<void> {
     const { state, saveCreds } = await useMultiFileAuthState(this.authDir);
-    if ((state.creds as { registered?: boolean }).registered === true) {
+    const credsArePaired = (): boolean => {
+      const creds = state.creds as { me?: { id?: string }; noiseKey?: unknown };
+      return Boolean(creds.me?.id && creds.noiseKey);
+    };
+    if (credsArePaired()) {
       this.done = true;
       return;
     }
 
     const sock = makeWASocket({
       auth: state,
-      logger: pino({ level: 'silent' }),
+      logger: pino({ level: process.env.WHATSAPP_DEBUG === '1' ? 'debug' : 'silent' }),
       markOnlineOnConnect: false,
       getMessage: async () => undefined,
     });
@@ -100,6 +104,11 @@ class BaileysLinkSession implements WhatsAppLinkSession {
           update.lastDisconnect?.error?.statusCode ??
           0,
         );
+        if (statusCode === DisconnectReason.restartRequired && credsArePaired()) {
+          this.done = true;
+          this.logger('WhatsApp QR login confirmed (restart required after pair)');
+          return;
+        }
         if (statusCode === DisconnectReason.loggedOut) {
           this.error = 'WhatsApp login was logged out before linking completed.';
         } else {

@@ -62,7 +62,8 @@ export class WhatsAppApi {
 
   private async connect(): Promise<void> {
     const { state, saveCreds } = await useMultiFileAuthState(this.options.authDir);
-    if ((state.creds as { registered?: boolean }).registered !== true) {
+    const creds = state.creds as { me?: { id?: string }; noiseKey?: unknown };
+    if (!creds.me?.id || !creds.noiseKey) {
       this.running = false;
       throw new Error('WhatsApp auth is not linked; run channel setup first.');
     }
