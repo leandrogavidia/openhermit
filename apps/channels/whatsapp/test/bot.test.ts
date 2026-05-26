@@ -41,6 +41,14 @@ test('isBotMentioned supports structured mentions and text fallback', () => {
     isBotMentioned({ message: { conversation: '@15551234567 hi' } }, '15551234567@s.whatsapp.net', '@15551234567 hi'),
     true,
   );
+  assert.equal(
+    isBotMentioned({ message: { conversation: '@155512345678 hi' } }, '15551234567@s.whatsapp.net', '@155512345678 hi'),
+    false,
+  );
+  assert.equal(
+    isBotMentioned({ message: { conversation: 'hey @15551234567 there' } }, '15551234567@s.whatsapp.net', 'hey @15551234567 there'),
+    true,
+  );
 });
 
 test('toIncomingMessage drops self and broadcast messages', () => {

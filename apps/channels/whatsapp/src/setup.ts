@@ -178,6 +178,14 @@ export const createWhatsAppSetup = (
     await session.link.cancel().catch(() => undefined);
   };
 
+  const sweepExpired = async (): Promise<void> => {
+    const expired: Array<[string, PendingSession]> = [];
+    for (const [id, session] of sessions) {
+      if (isExpired(session)) expired.push([id, session]);
+    }
+    await Promise.all(expired.map(([id, session]) => cleanup(id, session)));
+  };
+
   const toState = async (
     sessionId: string,
     ctx: ChannelSetupContext,
@@ -215,6 +223,7 @@ export const createWhatsAppSetup = (
 
   return {
     begin: async (input, ctx) => {
+      await sweepExpired();
       const sessionId = randomUUID();
       const rawAuthDir = typeof input.auth_dir === 'string' && input.auth_dir.trim()
         ? input.auth_dir.trim()
@@ -229,9 +238,13 @@ export const createWhatsAppSetup = (
       return { sessionId, state: await toState(sessionId, ctx) };
     },
 
-    poll: async (sessionId, ctx) => toState(sessionId, ctx),
+    poll: async (sessionId, ctx) => {
+      await sweepExpired();
+      return toState(sessionId, ctx);
+    },
 
     cancel: async (sessionId) => {
+      await sweepExpired();
       const session = sessions.get(sessionId);
       if (session) await cleanup(sessionId, session);
     },

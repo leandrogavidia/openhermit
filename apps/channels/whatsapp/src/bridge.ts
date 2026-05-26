@@ -104,8 +104,13 @@ export class WhatsAppBridge implements ChannelOutbound {
       () => this.handleIncomingInner(event),
       () => this.handleIncomingInner(event),
     );
-    this.chatLocks.set(key, current.catch(() => undefined));
-    await current;
+    const queued = current.catch(() => undefined);
+    this.chatLocks.set(key, queued);
+    try {
+      await current;
+    } finally {
+      if (this.chatLocks.get(key) === queued) this.chatLocks.delete(key);
+    }
   }
 
   private async handleIncomingInner(event: WhatsAppIncomingMessage): Promise<void> {

@@ -72,3 +72,36 @@ test('cancel() drops the setup session', async () => {
   const state = await setup.poll(sessionId, ctx);
   assert.equal(state.kind, 'error');
 });
+
+test('abandoned sessions are swept and cancelled on next setup action', async () => {
+  const cancellations: string[] = [];
+  const starter: StartWhatsAppLinkSession = async ({ authDir }) => ({
+    authDir,
+    async read() {
+      return { kind: 'awaiting', qrText: 'qr' };
+    },
+    async cancel() {
+      cancellations.push(authDir);
+    },
+  });
+
+  const setup = createWhatsAppSetup({ startLinkSession: starter });
+  const originalNow = Date.now;
+  try {
+    let now = 1_000_000;
+    Date.now = () => now;
+
+    const { sessionId: abandoned } = await setup.begin({ auth_dir: '/tmp/abandoned' }, ctx);
+    assert.equal(cancellations.length, 0);
+
+    now += 11 * 60 * 1000;
+
+    await setup.begin({ auth_dir: '/tmp/fresh' }, ctx);
+    assert.deepEqual(cancellations, ['/tmp/abandoned']);
+
+    const state = await setup.poll(abandoned, ctx);
+    assert.equal(state.kind, 'error');
+  } finally {
+    Date.now = originalNow;
+  }
+});

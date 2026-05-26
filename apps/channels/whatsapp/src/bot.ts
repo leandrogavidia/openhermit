@@ -109,7 +109,7 @@ export function isBotMentioned(
   if (extractMentionedJids(message).includes(normalizedBot)) return true;
   const phone = jidToPhone(normalizedBot);
   const digits = phone?.slice(1);
-  return Boolean(digits && text.includes(`@${digits}`));
+  return Boolean(digits && new RegExp(`@${digits}\\b`).test(text));
 }
 
 export function toIncomingMessage(

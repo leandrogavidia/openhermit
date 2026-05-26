@@ -39,7 +39,12 @@ export class WhatsAppApi {
   async start(): Promise<void> {
     if (this.running) return;
     this.running = true;
-    await this.connect();
+    try {
+      await this.connect();
+    } catch (err) {
+      this.running = false;
+      throw err;
+    }
   }
 
   async stop(): Promise<void> {
