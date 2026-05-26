@@ -69,7 +69,6 @@ export class WhatsAppApi {
 
     const sock = makeWASocket({
       auth: state,
-      printQRInTerminal: false,
       logger: pino({ level: 'silent' }),
       markOnlineOnConnect: false,
       getMessage: async () => undefined,
