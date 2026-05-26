@@ -84,6 +84,7 @@ class BaileysLinkSession implements WhatsAppLinkSession {
 
     const sock = makeWASocket({
       auth: state,
+      browser: ['OpenHermit', 'Desktop', '1.0.0'],
       logger: pino({ level: process.env.WHATSAPP_DEBUG === '1' ? 'debug' : 'silent' }),
       markOnlineOnConnect: false,
       getMessage: async () => undefined,
