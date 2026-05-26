@@ -29,6 +29,7 @@ export interface WhatsAppLinkSession {
 
 export type StartWhatsAppLinkSession = (opts: {
   authDir: string;
+  agentId: string;
   logger: (message: string) => void;
 }) => Promise<WhatsAppLinkSession>;
 
@@ -68,6 +69,7 @@ class BaileysLinkSession implements WhatsAppLinkSession {
 
   constructor(
     readonly authDir: string,
+    private readonly agentId: string,
     private readonly logger: (message: string) => void,
   ) {}
 
@@ -82,9 +84,10 @@ class BaileysLinkSession implements WhatsAppLinkSession {
       return;
     }
 
+    const deviceName = `OpenHermit · ${this.agentId}`.slice(0, 64);
     const sock = makeWASocket({
       auth: state,
-      browser: ['OpenHermit', 'Desktop', '1.0.0'],
+      browser: [deviceName, 'Desktop', '1.0.0'],
       logger: pino({ level: process.env.WHATSAPP_DEBUG === '1' ? 'debug' : 'silent' }),
       markOnlineOnConnect: false,
       getMessage: async () => undefined,
@@ -153,9 +156,10 @@ class BaileysLinkSession implements WhatsAppLinkSession {
 
 export const startRealWhatsAppLinkSession: StartWhatsAppLinkSession = async ({
   authDir,
+  agentId,
   logger,
 }) => {
-  const session = new BaileysLinkSession(authDir, logger);
+  const session = new BaileysLinkSession(authDir, agentId, logger);
   await session.start();
   return session;
 };
@@ -218,6 +222,7 @@ export const createWhatsAppSetup = (
       const authDir = expandHome(rawAuthDir);
       const link = await startLinkSession({
         authDir,
+        agentId: ctx.agentId,
         logger: (message) => ctx.logger(message),
       });
       sessions.set(sessionId, { createdAt: Date.now(), link });
