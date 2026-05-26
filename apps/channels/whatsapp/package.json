@@ -49,9 +49,9 @@
     "postpack": "node scripts/restore-package-json.mjs"
   },
   "dependencies": {
-    "@openhermit/sdk": "^0.6.0",
-    "baileys": "^6.7.19",
-    "pino": "^9.6.0"
+    "@openhermit/sdk": "0.6.1",
+    "baileys": "7.0.0-rc13",
+    "pino": "10.3.1"
   },
   "devDependencies": {
     "@openhermit/protocol": "0.2.0",
