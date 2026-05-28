@@ -27,6 +27,7 @@ import type {
   AgentConfigStore,
   AgentStore,
   DbAgentChannelStore,
+  DbChannelCredentialStore,
   SecretStore,
 } from '@openhermit/store';
 
@@ -35,6 +36,7 @@ import type { ChannelRegistry } from './auth.js';
 export interface ChannelPoolOptions {
   agentStore: AgentStore;
   channelStore: DbAgentChannelStore;
+  channelCredentialStore?: DbChannelCredentialStore | undefined;
   configStore: AgentConfigStore;
   secretStore: SecretStore;
   channelRegistry: ChannelRegistry;
@@ -187,6 +189,9 @@ export class ChannelPool {
         logger: (channel, msg) => this.opts.log(`[${agentId}] [${channel}] ${msg}`),
         reportRuntimeError: (error) =>
           void this.handleRuntimeError(agentId, row.channelType, row.id, error),
+        ...(this.opts.channelCredentialStore
+          ? { credentialStore: this.opts.channelCredentialStore.scoped(agentId, row.channelType) }
+          : {}),
       });
       if (handle) startedHandles.push(handle);
       startedStatuses.push(status);
@@ -316,6 +321,9 @@ export class ChannelPool {
       logger: (channel, msg) => this.opts.log(`[${agentId}] [${channel}] ${msg}`),
       reportRuntimeError: (error) =>
         void this.handleRuntimeError(agentId, channelName, row.id, error),
+      ...(this.opts.channelCredentialStore
+        ? { credentialStore: this.opts.channelCredentialStore.scoped(agentId, channelName) }
+        : {}),
     });
 
     if (handle) {

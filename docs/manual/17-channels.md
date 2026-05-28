@@ -25,8 +25,9 @@ A **channel** is a transport for messages: the CLI, the web UI, a Telegram bot, 
 **Installable as npm packages** (add via `hermit channel install`):
 
 - **WeChat (personal)** — `@openhermit/channel-wechat`. Pair an existing personal WeChat account with the agent using a QR-scan wizard. Text-only v0.
+- **WhatsApp** — `@openhermit/channel-whatsapp`. Link a WhatsApp account through WhatsApp Web / Linked Devices using a QR-scan wizard. Text-only v1.
 
-Each non-CLI channel needs a credential (a bot token or app secret). Credentials are stored as secrets — see [Chapter 18](18-secrets.md).
+Each non-CLI channel needs a credential (a bot token, app secret, or linked-device auth state). Operator-entered tokens are stored as secrets — see [Chapter 18](18-secrets.md). Channel-owned auth state, such as WhatsApp Web credentials, is stored in encrypted channel credential rows.
 
 Newer adapters may exist (e.g., Signal); the *Manage → Channels* tab is the source of truth for which adapters your gateway has.
 
@@ -73,6 +74,13 @@ A gateway restart (`hermit gateway stop && hermit gateway start`) is required fo
 - Pair the bot through *Manage → Channels → Add channel → WeChat*: the UI renders a QR code that you scan with the WeChat mobile app and confirm. The setup wizard exchanges the scan + confirmation for a long-lived `bot_token` and IDC-pinned `base_url`, which the gateway stores on the channel row.
 - Restarts preserve the login: the gateway reloads `bot_token` from the channel row and resumes the iLink long-poll without re-scanning. You only need to re-pair if you unlink the bot from inside the WeChat client.
 - Text-only in v0 — no attachments, no group filtering.
+
+### WhatsApp (external plugin)
+
+- Install with `hermit channel install @openhermit/channel-whatsapp`, then restart the gateway.
+- Pair through *Manage → Channels → Add channel → WhatsApp*: scan the QR code from WhatsApp → Linked devices.
+- Baileys auth state is stored in encrypted DB channel credentials; the channel row keeps only `auth_profile` plus allow-list settings. Legacy `auth_dir` folders are no longer used.
+- Text-only in v1 — captions are treated as text, media-only messages are ignored.
 
 ### Web / CLI
 

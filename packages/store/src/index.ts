@@ -103,6 +103,7 @@ export {
   FileSecretStore,
   DbSecretStore,
   DbAgentChannelStore,
+  DbChannelCredentialStore,
   DbSandboxStore,
   DbPolicyStore,
   DbApprovalRequestStore,

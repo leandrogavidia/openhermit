@@ -33,6 +33,7 @@ import type {
   DbSkillStore,
   DbUserStore,
   DbAgentChannelStore,
+  DbChannelCredentialStore,
   SandboxStore,
   AttachmentStorage,
 } from '@openhermit/store';
@@ -228,6 +229,7 @@ export interface GatewayAppOptions {
   userStore?: DbUserStore | undefined;
   configStore?: DbAgentConfigStore | undefined;
   agentChannelStore?: DbAgentChannelStore | undefined;
+  channelCredentialStore?: DbChannelCredentialStore | undefined;
   instructionStore?: import('@openhermit/store').DbInstructionStore | undefined;
   sandboxStore?: SandboxStore | undefined;
   policyStore?: DbPolicyStore | undefined;
@@ -2715,6 +2717,9 @@ export const createGatewayApp = (options: GatewayAppOptions): Hono => {
   ): ChannelSetupContext => ({
     agentId,
     logger: (msg) => log(`[${agentId}] [${channelType}/setup] ${msg}`),
+    ...(options.channelCredentialStore
+      ? { credentialStore: options.channelCredentialStore.scoped(agentId, channelType) }
+      : {}),
   });
 
   app.post('/api/agents/:agentId/channels/:channelType/setup/begin', async (c) => {

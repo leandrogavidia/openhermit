@@ -172,10 +172,11 @@ All durable internal state is scoped by `agent_id` where applicable:
 | Skills | Skill library and per-agent/global assignments |
 | MCP servers | External MCP server definitions and assignments |
 | Channels | Built-in and external channel rows with encrypted tokens |
+| Channel credentials | Encrypted channel-owned auth state such as WhatsApp Web / Baileys credentials |
 | Secrets | Per-agent provider/integration secrets, encrypted at rest |
 | Schedules | Cron/once jobs and run history |
 
-Secrets are encrypted with `OPENHERMIT_SECRETS_KEY` (AES-256-GCM); without that key the gateway falls back to per-agent `secrets.json` for local dev. The only per-agent files on disk are the workspace at `~/.openhermit/workspaces/{agentId}/`; enabled skills are synced into each backend's own `<agent_home>/.openhermit/skills/system/` (bind-mounted for docker, uploaded via SDK for e2b/daytona).
+Secrets and channel-owned credentials are encrypted with `OPENHERMIT_SECRETS_KEY` (AES-256-GCM); without that key the gateway falls back to per-agent `secrets.json` for local dev secrets, but DB-backed channel credentials are unavailable. The only per-agent files on disk are the workspace at `~/.openhermit/workspaces/{agentId}/`; enabled skills are synced into each backend's own `<agent_home>/.openhermit/skills/system/` (bind-mounted for docker, uploaded via SDK for e2b/daytona).
 
 ---
 

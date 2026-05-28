@@ -42,11 +42,13 @@ the generic setup wizard.
 2. Click **Set up**.
 3. Open WhatsApp on your phone, then **Linked devices**.
 4. Scan the QR code shown by OpenHermit.
-5. When linking completes, OpenHermit stores the auth directory in the
-   channel row and enables the channel.
+5. When linking completes, OpenHermit stores `auth_profile` in the
+   channel row and writes the Baileys auth state to encrypted database-backed
+   channel credentials.
 
-The auth state is stored on the gateway host. Moving the gateway to a
-new machine requires moving the configured `auth_dir` too.
+The auth state is internal OpenHermit state. It is stored in PostgreSQL and
+encrypted with `OPENHERMIT_SECRETS_KEY`; moving the gateway no longer requires
+copying a local WhatsApp credential directory.
 
 ## Stored config
 
@@ -54,11 +56,14 @@ After successful setup, `agent_channels.config` contains:
 
 ```jsonc
 {
-  "auth_dir": "~/.openhermit/credentials/whatsapp/main/default",
+  "auth_profile": "default",
   "allowed_senders": ["+15551234567"],          // optional
   "allowed_group_jids": ["120363000000000@g.us"] // optional; "*" allows all groups
 }
 ```
+
+The profile points to encrypted rows in `agent_channel_credentials`; Baileys
+`creds` and signal keys are not stored in `agent_channels.config`.
 
 Without `allowed_senders`, direct messages are accepted from anyone.
 Groups are default-deny unless `allowed_group_jids` is set.
@@ -71,5 +76,8 @@ Groups are default-deny unless `allowed_group_jids` is set.
   trigger the agent only when the bot is mentioned.
 - Outbound targets accept a raw WhatsApp JID, a `whatsapp:<jid>` value,
   or an E.164 number such as `+15551234567`.
+- Legacy `auth_dir` configs are no longer used. If one is found under
+  `~/.openhermit/credentials/whatsapp/`, the adapter best-effort deletes it
+  and requires setup to be run again.
 - Baileys is not affiliated with WhatsApp. Use a dedicated number when
   possible and avoid bulk or spam-like behavior.

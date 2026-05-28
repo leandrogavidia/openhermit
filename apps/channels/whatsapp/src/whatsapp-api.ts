@@ -1,16 +1,18 @@
 import makeWASocket, {
   DisconnectReason,
-  useMultiFileAuthState,
 } from 'baileys';
+import type { ChannelCredentialStore } from '@openhermit/protocol';
 import pino from 'pino';
 
 import { normalizeJid, targetToJid } from './jid.js';
+import { useDbAuthState } from './db-auth-state.js';
 
 export type RawWhatsAppMessage = Record<string, any>;
 export type RawWhatsAppMessageHandler = (message: RawWhatsAppMessage) => void | Promise<void>;
 
 export interface WhatsAppApiOptions {
-  authDir: string;
+  authProfile: string;
+  credentialStore: ChannelCredentialStore;
   logger?: (message: string) => void;
   reportRuntimeError?: (error: string | null) => void;
   reconnectDelayMs?: number;
@@ -66,7 +68,10 @@ export class WhatsAppApi {
   }
 
   private async connect(): Promise<void> {
-    const { state, saveCreds } = await useMultiFileAuthState(this.options.authDir);
+    const { state, saveCreds } = await useDbAuthState(
+      this.options.credentialStore,
+      this.options.authProfile,
+    );
     const creds = state.creds as { me?: { id?: string }; noiseKey?: unknown };
     if (!creds.me?.id || !creds.noiseKey) {
       this.running = false;

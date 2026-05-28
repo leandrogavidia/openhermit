@@ -23,6 +23,7 @@ import {
   FileSecretStore,
   DbSecretStore,
   DbAgentChannelStore,
+  DbChannelCredentialStore,
   DbMetaStore,
   LocalAttachmentStorage,
   S3AttachmentStorage,
@@ -179,6 +180,7 @@ export const main = async (): Promise<void> => {
   let userStore: DbUserStore | undefined;
   let configStore: DbAgentConfigStore | undefined;
   let agentChannelStore: DbAgentChannelStore | undefined;
+  let channelCredentialStore: DbChannelCredentialStore | undefined;
   let instructionStore: DbInstructionStore | undefined;
   let sandboxStore: DbSandboxStore | undefined;
   let policyStore: DbPolicyStore | undefined;
@@ -205,6 +207,7 @@ export const main = async (): Promise<void> => {
       sessionStore = await DbSessionStore.open();
       if (process.env.OPENHERMIT_SECRETS_KEY) {
         agentChannelStore = await DbAgentChannelStore.open();
+        channelCredentialStore = await DbChannelCredentialStore.open();
       }
       logStartup('agent store connected');
     } catch (error) {
@@ -426,6 +429,7 @@ export const main = async (): Promise<void> => {
     ...(userStore ? { userStore } : {}),
     ...(configStore ? { configStore } : {}),
     ...(agentChannelStore ? { agentChannelStore } : {}),
+    ...(channelCredentialStore ? { channelCredentialStore } : {}),
     ...(instructionStore ? { instructionStore } : {}),
     ...(sandboxStore ? { sandboxStore } : {}),
     ...(policyStore ? { policyStore } : {}),
@@ -512,6 +516,7 @@ export const main = async (): Promise<void> => {
       channelPool = new ChannelPool({
         agentStore,
         channelStore: agentChannelStore,
+        ...(channelCredentialStore ? { channelCredentialStore } : {}),
         configStore,
         secretStore,
         channelRegistry: channels,

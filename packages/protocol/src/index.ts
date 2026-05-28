@@ -321,6 +321,22 @@ export interface ChannelOutbound {
   }): Promise<ChannelOutboundResult>;
 }
 
+/**
+ * Per-agent, per-channel credential storage exposed to channel manifests.
+ *
+ * The gateway scopes implementations to one `(agentId, channelType)` before
+ * handing them to plugins, so plugins only address profiles and keys. Values
+ * are opaque strings; the backing store decides encryption and persistence.
+ */
+export interface ChannelCredentialStore {
+  get(profile: string, key: string): Promise<string | undefined>;
+  list(profile: string): Promise<Record<string, string>>;
+  set(profile: string, key: string, value: string): Promise<void>;
+  delete(profile: string, key: string): Promise<void>;
+  replace(profile: string, values: Record<string, string>): Promise<void>;
+  clear(profile: string): Promise<void>;
+}
+
 // ── Channel Plugin Contract ───────────────────────────────────────────
 //
 // The types below define the stable contract a channel plugin package
@@ -354,6 +370,12 @@ export interface ChannelContext {
    * value is cheap — the gateway dedupes.
    */
   reportRuntimeError: (error: string | null) => void;
+  /**
+   * Optional durable credential storage for channel-owned auth state
+   * (for example Baileys signal keys). Available only when the gateway has
+   * DB-backed encrypted credential storage configured.
+   */
+  credentialStore?: ChannelCredentialStore;
 }
 
 /**
@@ -569,6 +591,12 @@ export interface ChannelSetupContext {
   agentId: string;
   /** Per-session logger (prefixed with channel key + agent id by caller). */
   logger: (message: string) => void;
+  /**
+   * Optional durable credential storage scoped to this setup's channel.
+   * Setup flows may write temporary profiles and return a final config that
+   * references the promoted profile.
+   */
+  credentialStore?: ChannelCredentialStore;
 }
 
 /**

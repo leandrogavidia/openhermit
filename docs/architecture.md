@@ -50,7 +50,7 @@ OpenHermit keeps internal runtime state separate from external task state.
 - schedules and schedule runs
 - per-agent runtime config and security policy (`agents.config_json` / `agents.security_json` columns)
 - per-agent secrets (encrypted in the `agent_secrets` table when `OPENHERMIT_SECRETS_KEY` is set; falls back to per-agent `secrets.json` only when no key is configured)
-- channel rows with encrypted tokens (`agent_channels`)
+- channel rows with encrypted tokens (`agent_channels`) and encrypted channel-owned auth state (`agent_channel_credentials`)
 
 **External state** is the user's work surface:
 
@@ -62,7 +62,7 @@ OpenHermit keeps internal runtime state separate from external task state.
 
 ## Per-Agent State
 
-Runtime config, security policy, and per-agent secrets are stored in PostgreSQL (`agents.config_json`, `agents.security_json`, `agent_secrets`) and managed through the admin UI, REST API, or `hermit config ... / hermit security ...`. Channels live in `agent_channels` with encrypted tokens, managed through `/api/agents/{agentId}/channels/...`. Secrets are encrypted at rest with `OPENHERMIT_SECRETS_KEY`; if no key is configured the gateway falls back to a plaintext `secrets.json` per agent (local-dev only — `hermit setup` enables the encrypted DB store).
+Runtime config, security policy, per-agent secrets, and channel-owned credentials are stored in PostgreSQL (`agents.config_json`, `agents.security_json`, `agent_secrets`, `agent_channel_credentials`) and managed through the admin UI, REST API, or `hermit config ... / hermit security ...`. Channels live in `agent_channels` with encrypted tokens, managed through `/api/agents/{agentId}/channels/...`. Secrets and channel credential rows are encrypted at rest with `OPENHERMIT_SECRETS_KEY`; if no key is configured the gateway falls back to a plaintext `secrets.json` per agent for local-dev secrets only.
 
 Per-agent state lives in Postgres; the only per-agent artifact on disk is the workspace:
 

@@ -8,12 +8,18 @@ import type { ChannelManifest } from '@openhermit/protocol';
 
 import { WhatsAppBot } from './bot.js';
 import { WhatsAppBridge } from './bridge.js';
-import { createWhatsAppSetup, expandHome } from './setup.js';
+import {
+  DEFAULT_AUTH_PROFILE,
+  createWhatsAppSetup,
+  removeLegacyAuthDir,
+} from './setup.js';
 import { WhatsAppApi } from './whatsapp-api.js';
 
 interface WhatsAppRuntimeConfig {
   enabled?: boolean;
-  auth_dir: string;
+  auth_profile?: string;
+  /** Legacy filesystem auth path. No longer supported; cleaned up on sight. */
+  auth_dir?: string;
   allowed_senders?: string[];
   allowed_group_jids?: string[];
 }
@@ -23,14 +29,8 @@ const manifest: ChannelManifest = {
   key: 'whatsapp',
   namespace: 'whatsapp',
   displayName: 'WhatsApp',
+  defaultConfig: { auth_profile: DEFAULT_AUTH_PROFILE },
   configFields: [
-    {
-      kind: 'text',
-      key: 'auth_dir',
-      label: 'Auth directory',
-      placeholder: '~/.openhermit/credentials/whatsapp/<agent>/default',
-      help: 'Filled by setup. Edit only if you moved the Baileys auth files.',
-    },
     {
       kind: 'string_list',
       key: 'allowed_senders',
@@ -50,15 +50,31 @@ const manifest: ChannelManifest = {
   start: async (rawConfig, context) => {
     const config = rawConfig as WhatsAppRuntimeConfig;
     const log = (msg: string): void => context.logger('whatsapp', msg);
-    const authDir = typeof config.auth_dir === 'string' ? config.auth_dir.trim() : '';
+    const legacyAuthDir = typeof config.auth_dir === 'string' ? config.auth_dir.trim() : '';
 
-    if (!authDir) {
-      log('missing auth_dir - channel disabled until linked via setup');
-      return undefined;
+    if (legacyAuthDir) {
+      const cleanup = await removeLegacyAuthDir(legacyAuthDir);
+      if (cleanup.removed) {
+        log(`removed legacy auth_dir ${cleanup.removed}`);
+      } else if (cleanup.skipped) {
+        log(`legacy auth_dir is outside the managed WhatsApp credentials root; skipped delete: ${cleanup.skipped}`);
+      } else if (cleanup.error) {
+        log(`failed to remove legacy auth_dir: ${cleanup.error}`);
+      }
+      throw new Error('WhatsApp auth_dir is no longer supported; run WhatsApp setup again to store credentials in the database.');
     }
 
+    if (!context.credentialStore) {
+      throw new Error('WhatsApp credentials require DATABASE_URL and OPENHERMIT_SECRETS_KEY. Configure both and restart the gateway.');
+    }
+
+    const authProfile = typeof config.auth_profile === 'string' && config.auth_profile.trim()
+      ? config.auth_profile.trim()
+      : DEFAULT_AUTH_PROFILE;
+
     const api = new WhatsAppApi({
-      authDir: expandHome(authDir),
+      authProfile,
+      credentialStore: context.credentialStore,
       logger: log,
       reportRuntimeError: context.reportRuntimeError,
     });
