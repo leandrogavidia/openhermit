@@ -24,11 +24,16 @@ export class DbChannelCredentialStore {
     const url = databaseUrl ?? process.env.DATABASE_URL;
     if (!url) throw new Error('DATABASE_URL environment variable is required');
     const pool = new pg.Pool({ connectionString: url });
-    await pool.query('SELECT 1');
-    const db = drizzle(pool, { schema });
-    const store = new DbChannelCredentialStore(db, secretsKeyFromEnv());
-    store.pool = pool;
-    return store;
+    try {
+      await pool.query('SELECT 1');
+      const db = drizzle(pool, { schema });
+      const store = new DbChannelCredentialStore(db, secretsKeyFromEnv());
+      store.pool = pool;
+      return store;
+    } catch (error) {
+      await pool.end().catch(() => undefined);
+      throw error;
+    }
   }
 
   static withDb(db: DrizzleDb): DbChannelCredentialStore {
