@@ -75,6 +75,7 @@ import {
   signJwt,
   tokensMatch,
   verifyAdminToken,
+  verifyJwt,
 } from './auth.js';
 
 // ─── Constants ────────────────────────────────────────────────────────────────
@@ -240,6 +241,7 @@ export interface GatewayAppOptions {
   attachmentMaxBytes?: number | undefined;
   metaStore?: import('@openhermit/store').DbMetaStore | undefined;
   sessionStore?: import('@openhermit/store').DbSessionStore | undefined;
+  consumedJtiStore?: import('@openhermit/store').DbConsumedJtiStore | undefined;
   /** Named sandbox presets, keyed by preset name. */
   sandboxPresets?: Record<string, SandboxPreset> | undefined;
   /** Default preset to use when an agent is created without an explicit `sandbox` field. Null disables auto-provisioning. */
@@ -280,7 +282,7 @@ const resolveRunner = async (
 // ─── App factory ──────────────────────────────────────────────────────────────
 
 export const createGatewayApp = (options: GatewayAppOptions): Hono => {
-  const { instances, agentStore, adminToken, userStore, configStore } = options;
+  const { instances, agentStore, adminToken, userStore, configStore, consumedJtiStore } = options;
   const log = options.logger ?? ((msg: string) => console.log(msg));
   const app = new Hono();
 
@@ -413,6 +415,7 @@ export const createGatewayApp = (options: GatewayAppOptions): Hono => {
       const { token, expiresAt } = await signJwt(authOptions.jwt, {
         channel: authResult.channel,
         channelUserId: authResult.channelUserId,
+        issuer: 'device-key',
       });
 
       return c.json({
@@ -491,6 +494,8 @@ export const createGatewayApp = (options: GatewayAppOptions): Hono => {
         channel?: string;
         channelUserId?: string;
         displayName?: string;
+        purpose?: string;
+        ttlSeconds?: number;
       };
       if (!body.channel || typeof body.channel !== 'string') {
         throw new ValidationError('channel is required.');
@@ -505,6 +510,28 @@ export const createGatewayApp = (options: GatewayAppOptions): Hono => {
       }
       if (body.displayName !== undefined && typeof body.displayName !== 'string') {
         throw new ValidationError('displayName must be a string if provided.');
+      }
+      const purpose: 'session' | 'exchange' =
+        body.purpose === 'exchange' ? 'exchange' : 'session';
+      // `exchange` tokens are designed to be carried in URL fragments and
+      // immediately swapped via /api/auth/exchange. They must be short-lived
+      // so a leaked URL is only briefly dangerous; an hour-long exchange
+      // token would defeat the point. A `session` mint keeps the historical
+      // 24h default.
+      const maxTtl = purpose === 'exchange' ? 600 : 86400;
+      let ttlSeconds: number | undefined;
+      if (body.ttlSeconds !== undefined) {
+        if (
+          typeof body.ttlSeconds !== 'number'
+          || !Number.isInteger(body.ttlSeconds)
+          || body.ttlSeconds < 1
+          || body.ttlSeconds > maxTtl
+        ) {
+          throw new ValidationError(`ttlSeconds must be an integer between 1 and ${maxTtl}.`);
+        }
+        ttlSeconds = body.ttlSeconds;
+      } else if (purpose === 'exchange') {
+        ttlSeconds = 120;
       }
 
       let userId = await userStore.resolve(body.channel, body.channelUserId);
@@ -536,6 +563,9 @@ export const createGatewayApp = (options: GatewayAppOptions): Hono => {
       const { token, expiresAt } = await signJwt(authOptions.jwt, {
         channel: body.channel,
         channelUserId: body.channelUserId,
+        issuer: 'admin-issued',
+        purpose,
+        ...(ttlSeconds ? { expiry: `${ttlSeconds}s` } : {}),
       });
 
       return c.json({
@@ -544,6 +574,64 @@ export const createGatewayApp = (options: GatewayAppOptions): Hono => {
         userId,
         isNewDevice: created,
         ...(body.displayName ? { displayName: body.displayName } : {}),
+        purpose,
+      });
+    });
+
+    /**
+     * Swap a single-use `purpose: 'exchange'` token for a normal session JWT.
+     *
+     * Designed for the web `/connect#token=…` deep-link flow: an external
+     * platform mints a short-lived exchange token via the admin-issued path,
+     * embeds it in the URL fragment, and the web app calls this endpoint
+     * (anonymous — the exchange token IS the credential) to swap it for a
+     * regular 24h session JWT. The exchange token's `jti` is recorded on
+     * success so a second attempt to redeem it is rejected (single-use).
+     *
+     * Body: { token: <exchange-jwt> }
+     * Returns: same shape as /api/admin/auth/issue-token's session response.
+     */
+    app.post('/api/auth/exchange', async (c) => {
+      if (!userStore) {
+        throw new OpenHermitError('User store is not configured.', 'not_configured', 500);
+      }
+      if (!consumedJtiStore) {
+        throw new OpenHermitError('Token exchange is not configured.', 'not_configured', 500);
+      }
+      const body = await c.req.json().catch(() => ({})) as { token?: string };
+      if (!body.token || typeof body.token !== 'string') {
+        throw new ValidationError('token is required.');
+      }
+      const payload = await verifyJwt(authOptions.jwt, body.token, {
+        allowPurpose: 'exchange',
+      });
+      if (!payload || !payload.jti || typeof payload.exp !== 'number') {
+        throw new UnauthorizedError('Exchange token is invalid or expired.');
+      }
+      const consumed = await consumedJtiStore.tryConsume(
+        payload.jti,
+        payload.exp,
+        new Date().toISOString(),
+      );
+      if (!consumed) {
+        throw new UnauthorizedError('Exchange token has already been used.');
+      }
+
+      const userId = await userStore.resolve(payload.channel, payload.channelUserId);
+      const user = userId ? await userStore.get(userId) : undefined;
+
+      const { token: sessionToken, expiresAt } = await signJwt(authOptions.jwt, {
+        channel: payload.channel,
+        channelUserId: payload.channelUserId,
+        issuer: 'admin-issued',
+        purpose: 'session',
+      });
+
+      return c.json({
+        token: sessionToken,
+        expiresAt,
+        userId,
+        ...(user?.name ? { displayName: user.name } : {}),
       });
     });
 
@@ -1663,6 +1751,51 @@ export const createGatewayApp = (options: GatewayAppOptions): Hono => {
     if (!userStore) return c.json([]);
     const identities = await userStore.listIdentities(c.req.param('userId'));
     return c.json(identities);
+  });
+
+  /**
+   * Attach a `(channel, channelUserId)` identity to an existing user.
+   *
+   * Mirrors the implicit linkIdentity that happens during device-key /
+   * admin-issued token exchange, but lets a back-office caller stitch
+   * identities together explicitly — e.g. when the same human has two
+   * channel logins (Telegram + the web SPA) and you want both pointing
+   * at one canonical user.
+   *
+   * Note: if the `(channel, channelUserId)` pair is already linked to a
+   * different user, `linkIdentity` reassigns it (and prunes the now-orphan
+   * source user). That's the desired merge behavior, but it IS destructive
+   * — only call this from a trusted back-office context.
+   */
+  app.post('/api/admin/users/:userId/identities', async (c) => {
+    requireAdmin(c.req.header('authorization'));
+    if (!userStore) {
+      throw new OpenHermitError('User store is not configured.', 'not_configured', 500);
+    }
+    const userId = c.req.param('userId');
+    const body = await c.req.json().catch(() => ({})) as {
+      channel?: unknown;
+      channelUserId?: unknown;
+    };
+    if (typeof body.channel !== 'string' || body.channel.length === 0) {
+      throw new ValidationError('channel is required.');
+    }
+    if (body.channel === 'admin') {
+      throw new ValidationError('channel "admin" is reserved.');
+    }
+    if (typeof body.channelUserId !== 'string' || body.channelUserId.length === 0) {
+      throw new ValidationError('channelUserId is required.');
+    }
+    if (!(await userStore.get(userId))) {
+      throw new NotFoundError(`User ${userId} not found.`);
+    }
+    await userStore.linkIdentity({
+      userId,
+      channel: body.channel,
+      channelUserId: body.channelUserId,
+      createdAt: new Date().toISOString(),
+    });
+    return c.json({ ok: true });
   });
 
   app.get('/api/admin/users/:userId/agents', async (c) => {
