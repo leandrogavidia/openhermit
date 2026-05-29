@@ -4,6 +4,7 @@ import type {
   ChannelOutbound,
   ChannelOutboundResult,
 } from '@openhermit/protocol';
+import { stripSilenceTokens } from '@openhermit/shared';
 
 import { formatAgentResponse } from './formatting.js';
 import {
@@ -20,7 +21,6 @@ import {
 import type { WhatsAppApi } from './whatsapp-api.js';
 
 const AGENT_RESPONSE_TIMEOUT_MS = 60_000;
-const NO_REPLY_TAG = '<NO_REPLY>';
 
 export interface WhatsAppIncomingMessage {
   chatJid: string;
@@ -321,9 +321,13 @@ export class WhatsAppBridge implements ChannelOutbound {
 
     this.lastEventIds.set(sessionId, nextLastEventId);
     const responseText = finalText ?? (accumulatedText.trim() || undefined);
-    if (responseText?.trim() === NO_REPLY_TAG) {
+    if (responseText === undefined) {
       return { text: undefined, error };
     }
-    return { text: responseText, error };
+    const stripped = stripSilenceTokens(responseText);
+    if (stripped.isSilent) {
+      return { text: undefined, error };
+    }
+    return { text: stripped.hadToken ? stripped.text : responseText, error };
   }
 }

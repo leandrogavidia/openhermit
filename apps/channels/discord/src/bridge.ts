@@ -2,11 +2,10 @@ import { randomUUID } from 'node:crypto';
 
 import { AgentLocalClient, parseSseFrames } from '@openhermit/sdk';
 import type { ChannelOutbound, ChannelOutboundResult } from '@openhermit/protocol';
+import { stripSilenceTokens } from '@openhermit/shared';
 
 import type { DiscordApi, DiscordMessageEvent } from './discord-api.js';
 import { formatAgentResponse, markdownToDiscord } from './formatting.js';
-
-const NO_REPLY_TAG = '<NO_REPLY>';
 
 interface TurnResult {
   text: string | undefined;
@@ -250,13 +249,15 @@ export class DiscordBridge implements ChannelOutbound {
 
           if (frame.event === 'text_delta') {
             accumulatedText += String(payload.text ?? '');
+            // Strip mid-stream too so a token can't flash before the final edit.
+            const displayText = stripSilenceTokens(accumulatedText).text;
 
             const now = Date.now();
-            if (!sentMessageId && accumulatedText.length > 0) {
+            if (!sentMessageId && displayText.length > 0) {
               try {
                 const sent = await this.discord.sendMessage(
                   channelId,
-                  markdownToDiscord(accumulatedText) + ' ...',
+                  markdownToDiscord(displayText) + ' ...',
                 );
                 sentMessageId = sent.id;
                 lastEditTime = now;
@@ -265,7 +266,7 @@ export class DiscordBridge implements ChannelOutbound {
               void this.discord.editMessage(
                 channelId,
                 sentMessageId,
-                markdownToDiscord(accumulatedText) + ' ...',
+                markdownToDiscord(displayText) + ' ...',
               ).catch(() => undefined);
               lastEditTime = now;
             }
@@ -297,14 +298,18 @@ export class DiscordBridge implements ChannelOutbound {
 
     this.lastEventIds.set(sessionId, nextLastEventId);
 
-    const responseText = finalText ?? (accumulatedText.trim() || undefined);
+    const rawResponseText = finalText ?? (accumulatedText.trim() || undefined);
+    const stripped =
+      rawResponseText !== undefined ? stripSilenceTokens(rawResponseText) : undefined;
 
-    if (responseText?.trim() === NO_REPLY_TAG) {
+    if (stripped?.isSilent) {
       if (sentMessageId) {
         void this.discord.deleteMessage(channelId, sentMessageId).catch(() => undefined);
       }
       return { text: undefined, error: undefined };
     }
+
+    const responseText = stripped?.hadToken ? stripped.text : rawResponseText;
 
     if (sentMessageId && responseText) {
       try {
