@@ -198,6 +198,62 @@ export const registerSkillsCommand = (program: Command): void => {
     });
 
   skills
+    .command('sync [skillId]')
+    .description(
+      'Re-read SKILL.md from disk and refresh DB + running agents. ' +
+        'Pass a skill ID to sync one; omit it to sync every registered system skill.',
+    )
+    .action(async (skillId: string | undefined) => {
+      try {
+        const gateway = createGateway();
+        const { results, agentsRefreshed } = await gateway.syncSkills(skillId);
+
+        if (results.length === 0) {
+          console.log('No skills to sync.');
+          return;
+        }
+
+        const formatChanges = (
+          changes?: Record<string, { from: string; to: string }>,
+        ): string => {
+          if (!changes) return '';
+          const parts: string[] = [];
+          for (const [field, { from, to }] of Object.entries(changes)) {
+            const fromShort = from.length > 30 ? from.slice(0, 30) + '…' : from;
+            const toShort = to.length > 30 ? to.slice(0, 30) + '…' : to;
+            parts.push(`${field}: "${fromShort}" → "${toShort}"`);
+          }
+          return parts.join('; ');
+        };
+
+        printTable(
+          results.map((r) => ({
+            id: r.id,
+            action: r.action,
+            changes: formatChanges(r.changes),
+          })),
+          [
+            { key: 'id', label: 'ID' },
+            { key: 'action', label: 'Action', width: 18 },
+            { key: 'changes', label: 'Changes' },
+          ],
+        );
+
+        const updated = results.filter((r) => r.action === 'updated').length;
+        const missing = results.filter((r) => r.action === 'missing_on_disk').length;
+        const summary = [
+          `${updated} updated`,
+          `${results.length - updated - missing} unchanged`,
+        ];
+        if (missing > 0) summary.push(`${missing} missing on disk`);
+        summary.push(`${agentsRefreshed} running agent(s) refreshed`);
+        console.log('\n' + summary.join(', ') + '.');
+      } catch (error) {
+        handleError(error);
+      }
+    });
+
+  skills
     .command('delete <skillId>')
     .description('Delete a skill from the global registry')
     .action(async (skillId: string) => {

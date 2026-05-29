@@ -7,6 +7,7 @@ import { randomUUID } from 'node:crypto';
 
 import { AgentLocalClient, parseSseFrames } from '@openhermit/sdk';
 import type { ChannelMessageAction, ChannelOutbound, ChannelOutboundResult } from '@openhermit/protocol';
+import { stripSilenceTokens } from '@openhermit/shared';
 
 import type { TelegramApi, TelegramCallbackQuery, TelegramMessage, TelegramUser } from './telegram-api.js';
 import {
@@ -14,9 +15,6 @@ import {
   markdownToTelegramHtml,
   streamingMarkdownToTelegramHtml,
 } from './formatting.js';
-
-/** Sentinel value the agent can return to suppress a reply in group chats. */
-const NO_REPLY_TAG = '<NO_REPLY>';
 
 /** Hard cap on TTS input length. Above this, fall back to text. */
 const VOICE_MAX_TEXT_LENGTH = 1500;
@@ -563,6 +561,8 @@ export class TelegramBridge implements ChannelOutbound {
 
           if (frame.event === 'text_delta') {
             accumulatedText += String(payload.text ?? '');
+            // Strip mid-stream too so a token can't flash before the final edit.
+            const displayText = stripSilenceTokens(accumulatedText).text;
 
             // For voice replies we collect text silently — sending
             // streamed text would race against the voice message we're
@@ -572,9 +572,9 @@ export class TelegramBridge implements ChannelOutbound {
 
             // Streaming edit: send initial message or throttled edits.
             const now = Date.now();
-            if (!sentMessageId && accumulatedText.length > 0) {
+            if (!sentMessageId && displayText.length > 0) {
               try {
-                const html = streamingMarkdownToTelegramHtml(accumulatedText);
+                const html = streamingMarkdownToTelegramHtml(displayText);
                 const sent = await this.telegram.sendMessage(
                   chatId,
                   html + ' ...',
@@ -589,7 +589,7 @@ export class TelegramBridge implements ChannelOutbound {
               sentMessageId &&
               now - lastEditTime >= EDIT_THROTTLE_MS
             ) {
-              const html = streamingMarkdownToTelegramHtml(accumulatedText);
+              const html = streamingMarkdownToTelegramHtml(displayText);
               void this.telegram
                 .editMessageText(chatId, sentMessageId, html + ' ...', { parseMode: 'HTML' })
                 .catch(() => undefined);
@@ -644,16 +644,20 @@ export class TelegramBridge implements ChannelOutbound {
 
     this.lastEventIds.set(sessionId, nextLastEventId);
 
-    const responseText = finalText ?? (accumulatedText.trim() || undefined);
+    const rawResponseText = finalText ?? (accumulatedText.trim() || undefined);
+    const stripped =
+      rawResponseText !== undefined ? stripSilenceTokens(rawResponseText) : undefined;
 
     // Agent chose not to reply (group chat, not mentioned).
-    if (responseText && responseText.trim() === NO_REPLY_TAG) {
+    if (stripped?.isSilent) {
       if (sentMessageId) {
         // Delete the partially-streamed message.
         void this.telegram.deleteMessage(chatId, sentMessageId).catch(() => undefined);
       }
       return { text: undefined, error: undefined };
     }
+
+    const responseText = stripped?.hadToken ? stripped.text : rawResponseText;
 
     // Final edit to show complete text with HTML formatting (remove trailing " ...").
     if (sentMessageId && responseText) {

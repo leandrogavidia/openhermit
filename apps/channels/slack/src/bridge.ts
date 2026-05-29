@@ -2,11 +2,10 @@ import { randomUUID } from 'node:crypto';
 
 import { AgentLocalClient, parseSseFrames } from '@openhermit/sdk';
 import type { ChannelOutbound, ChannelOutboundResult } from '@openhermit/protocol';
+import { stripSilenceTokens } from '@openhermit/shared';
 
 import type { SlackApi, SlackMessageEvent } from './slack-api.js';
 import { formatAgentResponse, markdownToSlackMrkdwn } from './formatting.js';
-
-const NO_REPLY_TAG = '<NO_REPLY>';
 
 interface TurnResult {
   text: string | undefined;
@@ -246,13 +245,15 @@ export class SlackBridge implements ChannelOutbound {
 
           if (frame.event === 'text_delta') {
             accumulatedText += String(payload.text ?? '');
+            // Strip mid-stream too so a token can't flash before the final edit.
+            const displayText = stripSilenceTokens(accumulatedText).text;
 
             const now = Date.now();
-            if (!sentTs && accumulatedText.length > 0) {
+            if (!sentTs && displayText.length > 0) {
               try {
                 const sent = await this.slack.sendMessage(
                   channelId,
-                  markdownToSlackMrkdwn(accumulatedText) + ' ...',
+                  markdownToSlackMrkdwn(displayText) + ' ...',
                   ...(threadTs ? [{ threadTs }] : []),
                 );
                 sentTs = sent.ts;
@@ -262,7 +263,7 @@ export class SlackBridge implements ChannelOutbound {
               void this.slack.updateMessage(
                 channelId,
                 sentTs,
-                markdownToSlackMrkdwn(accumulatedText) + ' ...',
+                markdownToSlackMrkdwn(displayText) + ' ...',
               ).catch(() => undefined);
               lastEditTime = now;
             }
@@ -293,14 +294,18 @@ export class SlackBridge implements ChannelOutbound {
 
     this.lastEventIds.set(sessionId, nextLastEventId);
 
-    const responseText = finalText ?? (accumulatedText.trim() || undefined);
+    const rawResponseText = finalText ?? (accumulatedText.trim() || undefined);
+    const stripped =
+      rawResponseText !== undefined ? stripSilenceTokens(rawResponseText) : undefined;
 
-    if (responseText?.trim() === NO_REPLY_TAG) {
+    if (stripped?.isSilent) {
       if (sentTs) {
         void this.slack.web.chat.delete({ channel: channelId, ts: sentTs }).catch(() => undefined);
       }
       return { text: undefined, error: undefined };
     }
+
+    const responseText = stripped?.hadToken ? stripped.text : rawResponseText;
 
     if (sentTs && responseText) {
       try {

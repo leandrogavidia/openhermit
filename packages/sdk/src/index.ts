@@ -589,6 +589,15 @@ export interface AgentChannel {
   updatedAt: string;
   lastUsedAt: string | null;
   revokedAt: string | null;
+  /** Last persisted runtime error from the bridge (null when healthy). */
+  lastError?: string | null;
+  lastErrorAt?: string | null;
+  /** ISO timestamp of the most recent successful upstream interaction. */
+  lastSuccessAt?: string | null;
+  /** Failures since the last success — resets to 0 on recovery. */
+  consecutiveFailureCount?: number;
+  /** Monotonic lifetime failure count — never reset. */
+  totalFailureCount?: number;
 }
 
 /** Provider/model catalog entry returned by GET /api/providers. */
@@ -1173,6 +1182,29 @@ export class GatewayClient {
 
   async disableSkill(skillId: string, agentId: string): Promise<void> {
     await this.postJson(`/api/admin/skills/${encodeURIComponent(skillId)}/disable`, { agentId });
+  }
+
+  /**
+   * Re-read SKILL.md frontmatter from disk and refresh the sandbox of every
+   * running agent that has the skill enabled.
+   *
+   * - Pass a skill id to sync that one skill.
+   * - Pass `'*'` or omit `id` to sync every registered system skill.
+   *
+   * Only system skills are touched; user-installed skills are managed via
+   * the skill-install tool and are not safe to mutate from the operator
+   * side.
+   */
+  async syncSkills(id?: string): Promise<{
+    results: Array<{
+      id: string;
+      action: 'updated' | 'unchanged' | 'missing_on_disk' | 'not_registered';
+      changes?: Record<string, { from: string; to: string }>;
+    }>;
+    agentsRefreshed: number;
+  }> {
+    const body = id && id !== '*' ? { id } : {};
+    return this.postJson(`/api/admin/skills/sync`, body);
   }
 
   // --- instructions ---
