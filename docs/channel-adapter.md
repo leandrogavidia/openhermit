@@ -66,10 +66,11 @@ Adapters register `ChannelOutbound` implementations. The `session_send` tool can
 
 ## Configuration
 
-Channels are stored in the `agent_channels` table and managed through the admin UI (*Manage → Channels*) or the REST routes below. The row has two distinct credential slots:
+Channels are stored in the `agent_channels` table and managed through the admin UI (*Manage → Channels*) or the REST routes below. Channel rows and related credentials use three storage slots:
 
-- **`config` (jsonb, plaintext)** — adapter-specific credentials the channel uses to reach the *upstream* platform (Telegram bot token, Slack bot/app tokens, WeChat `bot_token` + `base_url` from iLink, etc.). These are stored as plaintext jsonb today; treat the database itself as the security boundary.
+- **`config` (jsonb, plaintext)** — non-secret adapter settings and setup-produced pointers. Some existing adapters still store upstream tokens here (for example WeChat `bot_token` + `base_url`); treat the database itself as the security boundary for those rows.
 - **`token_ciphertext` (text, AES-256-GCM)** — the bearer token OpenHermit *issues* to that channel, used by webhook ingress (`POST /api/agents/.../channels/.../webhook`) and by adapters calling back into the gateway API. Encrypted at rest with `OPENHERMIT_SECRETS_KEY` and decrypted only when an adapter starts.
+- **`agent_channel_credentials` (AES-256-GCM values)** — mutable channel-owned auth material such as WhatsApp Web / Baileys credentials. Plugins receive this as a scoped credential store; values are not exposed through channel config.
 
 To install or remove gateway-wide channel plugins (npm packages contributing new channel types), use:
 
@@ -111,7 +112,7 @@ The UI switch-renders on `state.kind`:
 - `done` — the UI takes `state.config` and POSTs / PATCHes it onto the channel row via the existing CRUD API (the setup contract itself does **not** write to the DB)
 - `error` — display `message` verbatim
 
-Session state lives in-process inside the plugin (`Map<sessionId, ...>`); the gateway is stateless. Sessions are bounded by a plugin-chosen TTL (WeChat: 5 min; Signal: 10 min). On gateway restart, in-flight setup sessions are lost — the UI restarts the wizard. **Completed setups survive restart** because the durable credentials live on the channel row, not in the setup session: WeChat's `bot_token` (and any equivalent long-lived credential a setup flow produces) is reloaded from `agent_channels.config` and used to re-establish the upstream connection without re-scanning.
+Session state lives in-process inside the plugin (`Map<sessionId, ...>`); the gateway is stateless. Sessions are bounded by a plugin-chosen TTL (WeChat: 5 min; Signal/WhatsApp: 10 min). On gateway restart, in-flight setup sessions are lost — the UI restarts the wizard. **Completed setups survive restart** because durable setup output lives either on the channel row (`agent_channels.config`) or in scoped encrypted channel credentials (`agent_channel_credentials`), then the adapter reloads that state on start.
 
 
 
@@ -183,7 +184,7 @@ WeChat (external plugin):
 WhatsApp (external plugin):
 
 - WhatsApp Web / Linked Devices through Baileys; no Twilio or WhatsApp Cloud API path
-- QR setup wizard persists `auth_dir` on the channel row
+- QR setup wizard stores Baileys credentials in encrypted DB channel credentials and persists `auth_profile` on the channel row
 - text-only v1; captions are treated as text, media-only messages are ignored
 - DMs are open by default unless `allowed_senders` is configured
 - groups are default-deny unless `allowed_group_jids` is configured; allowed group turns trigger only on mention

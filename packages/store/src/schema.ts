@@ -136,6 +136,26 @@ export const agentChannels = pgTable('agent_channels', {
 ]);
 
 /**
+ * Encrypted channel-owned credential state. This is for durable upstream
+ * adapter state that is not a simple operator-entered secret, such as
+ * WhatsApp Web / Baileys auth keys. Rows are scoped to one agent, one
+ * channel type, and one profile so setup flows can write temporary profiles
+ * before promoting them to a runtime profile like `default`.
+ */
+export const agentChannelCredentials = pgTable('agent_channel_credentials', {
+  agentId: text('agent_id').notNull(),
+  channelType: text('channel_type').notNull(),
+  profile: text('profile').notNull(),
+  key: text('key').notNull(),
+  valueCiphertext: text('value_ciphertext').notNull(),
+  createdAt: text('created_at').notNull(),
+  updatedAt: text('updated_at').notNull(),
+}, (table) => [
+  primaryKey({ columns: [table.agentId, table.channelType, table.profile, table.key] }),
+  index('idx_agent_channel_credentials_agent_channel').on(table.agentId, table.channelType),
+]);
+
+/**
  * Per-agent secrets, encrypted at rest with AES-256-GCM. The wire format
  * stored in `value_ciphertext` is `iv:authTag:ciphertext` (base64), and
  * the encryption key comes from the OPENHERMIT_SECRETS_KEY env var (32

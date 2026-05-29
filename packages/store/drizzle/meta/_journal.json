@@ -232,6 +232,13 @@
       "when": 1780000000000,
       "tag": "0032_agent_channels_success_counters",
       "breakpoints": true
+    },
+    {
+      "idx": 33,
+      "version": "7",
+      "when": 1780100000000,
+      "tag": "0033_channel_credentials",
+      "breakpoints": true
     }
   ]
 }

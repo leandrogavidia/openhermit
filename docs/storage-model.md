@@ -28,6 +28,7 @@ Agent-scoped tables:
 - `agent_skills`
 - `agent_mcp_servers`
 - `agent_channels`
+- `agent_channel_credentials`
 - `agent_secrets`
 - `schedules`
 - `schedule_runs`
@@ -50,6 +51,7 @@ Agent-scoped tables:
 | `mcp_servers` | Registered external MCP HTTP servers |
 | `agent_mcp_servers` | Global (`*`) and per-agent MCP assignments |
 | `agent_channels` | Built-in and external channel rows with encrypted bearer tokens |
+| `agent_channel_credentials` | Encrypted channel-owned auth state such as WhatsApp Web / Baileys credentials |
 | `agent_secrets` | Per-agent provider/integration secrets, encrypted with `OPENHERMIT_SECRETS_KEY` |
 | `schedules` | Cron and one-shot schedule definitions |
 | `schedule_runs` | Schedule execution history |
@@ -113,7 +115,7 @@ gateway's `POST /agents` flow seeds these columns with the default
 template; `PUT /api/agents/:id/config` and `PUT /api/agents/:id/secrets`
 also write through the stores.
 
-## Per-Agent Secrets
+## Per-Agent Secrets And Channel Credentials
 
 Secrets are stored in the `agent_secrets` table, encrypted at rest with
 `OPENHERMIT_SECRETS_KEY` (AES-GCM). The `DbSecretStore` is the default
@@ -127,6 +129,12 @@ Secrets are accessed exclusively through `SecretStore`. Config
 interpolation (`${{SECRET_NAME}}`), channel-token resolution, and the
 admin/owner APIs all go through the same interface — values are never
 returned to clients in plaintext after they are written.
+
+Channel-owned auth state that is too large or mutable for `agent_channels.config`
+lives in `agent_channel_credentials`, also encrypted with
+`OPENHERMIT_SECRETS_KEY`. Channel plugins receive a scoped credential store for
+the current `(agent_id, channel_type)` and address only profiles and keys.
+WhatsApp uses this for Baileys `creds` and signal key material.
 
 ## Per-Agent Files
 

@@ -21,11 +21,18 @@ export {
 export { WhatsAppBridge, shouldAcceptMessage } from './bridge.js';
 export { WhatsAppApi } from './whatsapp-api.js';
 export {
+  DEFAULT_AUTH_PROFILE,
   createWhatsAppSetup,
   defaultAuthDir,
   expandHome,
   collapseHome,
+  removeLegacyAuthDir,
 } from './setup.js';
+export {
+  deserializeAuthValue,
+  serializeAuthValue,
+  useDbAuthState,
+} from './db-auth-state.js';
 export type {
   WhatsAppIncomingMessage,
   WhatsAppBridgeOptions,
