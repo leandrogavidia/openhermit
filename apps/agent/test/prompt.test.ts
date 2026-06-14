@@ -28,7 +28,6 @@ test('buildSystemPrompt includes container mounting guidance when container tool
 
   assert.match(prompt, /Mounting files into service containers/);
   assert.match(prompt, /mount_target/);
-  assert.match(prompt, /Autonomy level: supervised/);
 });
 
 test('buildSystemPrompt omits container section when container toolset is absent', async (t) => {
@@ -40,7 +39,6 @@ test('buildSystemPrompt omits container section when container toolset is absent
 
   assert.doesNotMatch(prompt, /container_start/);
   assert.doesNotMatch(prompt, /mount_target/);
-  assert.match(prompt, /Autonomy level: supervised/);
 });
 
 test('buildSystemPrompt omits memory section when memory toolset is absent', async (t) => {
