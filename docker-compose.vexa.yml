@@ -1,0 +1,50 @@
+# Vexa meeting-transcription stack — companion to OpenHermit.
+#
+# Vexa's authoritative service definitions live in the Vexa repo
+# (https://github.com/Vexa-ai/vexa, `deploy/compose`). Rather than vendoring
+# (and drifting from) their compose, bring Vexa up from its own repo and join
+# it to the shared `openhermit-net` network declared here, then register its
+# MCP server with OpenHermit and point its webhook at the gateway. The full
+# runbook is in docs/vexa-meetings.md.
+#
+#   # one-time: create the shared network both stacks attach to
+#   docker network create openhermit-net
+#
+#   # Vexa core (from a Vexa checkout) — attach its services to openhermit-net
+#   #   git clone https://github.com/Vexa-ai/vexa && cd vexa
+#   #   (configure the transcription token + storage, then bring it up)
+#   #   make all          # or: docker compose -f deploy/compose/docker-compose.yml up -d
+#
+#   # this overlay (shared network; add `--profile bridge` to run the MCP bridge)
+#   docker compose -f docker-compose.yml -f docker-compose.vexa.yml up -d
+#
+# OpenHermit reaches Vexa over the published MCP/REST ports (VEXA_MCP_URL /
+# VEXA_BASE_URL); Vexa reaches the gateway's webhook via
+# OPENHERMIT_GATEWAY_PUBLIC_URL (host.docker.internal:<port> when the gateway
+# runs on the host).
+
+networks:
+  openhermit-net:
+    external: true
+
+services:
+  # OPTIONAL MCP transport bridge (opt in with `--profile bridge`).
+  #
+  # OpenHermit's MCP client only speaks the modern Streamable HTTP transport
+  # (apps/agent/src/mcp-client.ts). Probe Vexa's /mcp first — see
+  # docs/vexa-meetings.md "Verify the MCP transport". If it only speaks legacy
+  # SSE, run this bridge (it exposes Streamable HTTP on :18057 and proxies to
+  # Vexa's SSE endpoint) and register http://localhost:18057/mcp with
+  # OpenHermit instead of Vexa's url. Verify the proxy flags against the tool's
+  # own docs before relying on it — transport-conversion flags vary by version.
+  vexa-mcp-bridge:
+    image: node:22-alpine
+    profiles: ["bridge"]
+    networks: [openhermit-net]
+    ports: ["18057:18057"]
+    command: >
+      npx -y supergateway
+      --sse http://vexa-api-gateway:8056/mcp
+      --outputTransport streamableHttp
+      --port 18057
+    restart: unless-stopped

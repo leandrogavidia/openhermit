@@ -127,7 +127,7 @@ The gateway defaults to `http://127.0.0.1:4000` and serves the admin UI at `/adm
 | Secrets | `hermit config secrets list`, `set`, `remove` |
 | Instructions | `hermit instructions list`, `get`, `set`, `append`, `remove` — single-agent (`--agent <id>`) or admin fan-out (`--all`) |
 | Skills | `hermit skills list`, `assignments`, `scan`, `register`, `delete`, `enable`, `disable` |
-| MCP | `hermit mcp list`, `assignments`, `enable`, `disable` |
+| MCP | `hermit mcp list`, `register`, `assignments`, `enable`, `disable` |
 | Schedules | `hermit schedules list`, `create`, `pause`, `resume`, `delete`, `runs` |
 | Operations | `hermit status`, `hermit stats`, `hermit doctor`, `hermit logs [-f] [-n N]` |
 
@@ -152,7 +152,7 @@ Agent execution routes are exposed under `/api/agents/{agentId}`:
 
 Admin and owner-facing management endpoints live under `/api/admin/...` and `/api/agents/{agentId}/...`. Channel webhooks land at `POST /api/agents/{id}/channels/{namespace}/webhook`.
 
-See [docs/transport-protocol.md](docs/transport-protocol.md), [docs/skills.md](docs/skills.md), [docs/mcp-servers.md](docs/mcp-servers.md), and [docs/channel-adapter.md](docs/channel-adapter.md).
+See [docs/transport-protocol.md](docs/transport-protocol.md), [docs/skills.md](docs/skills.md), [docs/mcp-servers.md](docs/mcp-servers.md), [docs/channel-adapter.md](docs/channel-adapter.md), and [docs/vexa-meetings.md](docs/vexa-meetings.md) (join/transcribe/remember meetings via Vexa).
 
 ---
 
