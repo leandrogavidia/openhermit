@@ -190,6 +190,106 @@ export const flushSpeakerTagStream = (
   return stripLeadingSpeakerTag(state.buffer, knownNames);
 };
 
+export interface GroupParticipant {
+  id: string;
+  type: string;
+  displayName: string;
+  handle?: string;
+}
+
+export interface MentionRef {
+  id: string;
+  type: string;
+}
+
+const escapeRegExp = (value: string): string =>
+  value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+
+const mentionToken = (name: string): string =>
+  name.trim().normalize('NFC').toLowerCase();
+
+const PROTECTED_SPAN = /```[\s\S]*?(?:```|$)|``[^`]*``|`[^`]*`|(?<!@)\[[^\]\n]*\]\([^)\n]*\)/g;
+const MENTION_MARKUP = /@\[[^\]\n]+\]\(([^():\n]+):([^()\n]+)\)/g;
+
+const mapOutsideProtected = (text: string, fn: (segment: string) => string): string => {
+  let out = '';
+  let last = 0;
+  for (const span of text.matchAll(PROTECTED_SPAN)) {
+    out += fn(text.slice(last, span.index));
+    out += span[0];
+    last = span.index! + span[0].length;
+  }
+  out += fn(text.slice(last));
+  return out;
+};
+
+const MAX_MENTION_PARTICIPANTS = 256;
+const MAX_MENTION_TOKEN_CHARS = 128;
+
+export const transcodeGroupMentions = (
+  text: string,
+  participants: Iterable<GroupParticipant>,
+): string => {
+  const byToken = new Map<string, GroupParticipant | null>();
+  const addToken = (raw: string | undefined, participant: GroupParticipant) => {
+    const key = raw ? mentionToken(raw) : '';
+    if (!key || key.length > MAX_MENTION_TOKEN_CHARS) return;
+    const existing = byToken.get(key);
+    if (existing === undefined) byToken.set(key, participant);
+    else if (existing && existing.id !== participant.id) byToken.set(key, null);
+  };
+  let participantCount = 0;
+  for (const participant of participants) {
+    if (++participantCount > MAX_MENTION_PARTICIPANTS) return text;
+    addToken(participant.displayName, participant);
+    addToken(participant.handle, participant);
+  }
+  // Longest first so multi-word names win over their own prefixes.
+  const tokens = [...byToken.keys()].sort((a, b) => b.length - a.length);
+  if (tokens.length === 0) return text;
+
+  const alternation = tokens.map(escapeRegExp).join('|');
+  const re = new RegExp(
+    `(?<![\\p{L}\\p{N}_@/])@(?:\\[(${alternation})\\]|(${alternation})(?![\\p{L}\\p{N}_/-]))(?!\\()`,
+    'giu',
+  );
+
+  const rewrite = (segment: string): string =>
+    segment.replace(re, (match, bracketed, bare) => {
+      const participant = byToken.get(mentionToken((bracketed ?? bare) as string));
+      if (!participant) return match;
+      if (/[[\]()]/.test(participant.displayName)) return match;
+      return `@[${participant.displayName}](${participant.id}:${participant.type})`;
+    });
+
+  return mapOutsideProtected(text, (segment) => rewrite(segment.normalize('NFC')));
+};
+
+// Resolve the mentions present in a rendered reply by reading the markup
+export const extractMentionRefs = (
+  text: string,
+  participants: Iterable<GroupParticipant>,
+): MentionRef[] => {
+  const typeById = new Map<string, string>();
+  for (const participant of participants) typeById.set(participant.id, participant.type);
+  if (typeById.size === 0) return [];
+
+  const seen = new Set<string>();
+  const mentions: MentionRef[] = [];
+  mapOutsideProtected(text, (segment) => {
+    for (const match of segment.matchAll(MENTION_MARKUP)) {
+      const id = match[1]!;
+      const type = typeById.get(id);
+      if (type !== undefined && !seen.has(id)) {
+        seen.add(id);
+        mentions.push({ id, type });
+      }
+    }
+    return segment;
+  });
+  return mentions;
+};
+
 export const createUserMessage = (
   message: SessionMessage,
   attachmentContent: (TextContent | ImageContent)[] = [],

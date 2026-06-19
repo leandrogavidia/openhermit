@@ -24,8 +24,6 @@ import {
 } from '@openhermit/store';
 
 import {
-  AgentSecurity,
-  AgentWorkspace,
   DEFAULT_INTROSPECTION_CONFIG,
   DockerContainerManager,
   ExecBackendManager,
@@ -60,6 +58,8 @@ import {
   isEmptyAssistantTurn,
   stripEmptyAssistantTurns,
   stripLeadingSpeakerTag,
+  transcodeGroupMentions,
+  extractMentionRefs,
   normalizeSpeakerName,
   newSpeakerTagStream,
   pushSpeakerTagDelta,
@@ -91,7 +91,6 @@ import {
   compactContextIfNeeded,
   estimateAgentMessagesTokens,
   estimateFixedOverheadTokens,
-  estimateTextTokens,
   getContextCompactionMaxTokens,
   truncateToolResults,
 } from './agent-runner/context-compaction.js';
@@ -1016,10 +1015,7 @@ export class AgentRunner implements SessionRuntime {
       );
 
       const config = await this.options.security.readConfig();
-      // Skip introspection silently if the configured provider has no
-      // API key available — pi-agent-core's stream loop runs in an
-      // un-awaited IIFE, so a thrown "No API key" rejects nowhere and
-      // would crash the process.
+      // Skip introspection if the provider has no API key
       if (!this.resolveApiKey(config.model.provider)) {
         this.logRuntime(`introspection skipped: no API key for provider "${config.model.provider}"`);
         return false;
@@ -1096,9 +1092,6 @@ export class AgentRunner implements SessionRuntime {
       message = { ...message, text: transformed.text };
     }
 
-    // If this message arrived via a channel adapter, additionally fire
-    // channel.message.in@v1 so channel-specific plugins (e.g. Slack
-    // signature filtering, Telegram /command parsing) can transform it.
     if (session.spec.source.kind === 'channel' && session.spec.source.platform) {
       const channelTransformed = await this.bus.transform('channel.message.in@v1', {
         agentId: this.scope.agentId,
@@ -1179,6 +1172,16 @@ export class AgentRunner implements SessionRuntime {
     const isGroup = session.spec.source.type === 'group';
     const mentioned = message.mentioned !== false;
 
+    // Remember senders on every group message
+    if (isGroup) {
+      if (message.sender?.displayName) {
+        this.rememberGroupSender(session, message.sender.displayName);
+      }
+      for (const participant of message.participants ?? []) {
+        this.rememberGroupSender(session, participant.displayName);
+      }
+    }
+
     // Group + not mentioned → store only, don't trigger agent
     if (isGroup && !mentioned) {
       session.status = 'idle';
@@ -1201,14 +1204,11 @@ export class AgentRunner implements SessionRuntime {
       : message.text;
     const promptMessage = { ...message, text: promptText };
 
-    // Remember senders so we can strip a copied `[Name]` tag from the reply.
-    if (isGroup && message.sender?.displayName) {
-      this.rememberGroupSender(session, message.sender.displayName);
-    }
-
     const run = async (): Promise<void> => {
       try {
         await this.refreshAgentConfiguration(session);
+        // Snapshot this turn's roster
+        session.turnGroupParticipants = message.participants ?? undefined;
         session.latestAssistantText = undefined;
         session.speakerTagStream = undefined;
         session.consecutiveToolFailures = 0;
@@ -1267,9 +1267,7 @@ export class AgentRunner implements SessionRuntime {
     const ts = message.occurredAt ?? new Date().toISOString();
     const displayName = message.sender?.displayName;
 
-    // For user-role backfill we resolve the sender outside the side-effect
-    // queue (it can touch the users table). userIds mutation is reflected
-    // in the persisted index after the write below.
+    // User role backfill
     let messageUserId = session.resolvedUserId;
     if (role === 'user' && message.sender) {
       const now = new Date().toISOString();
@@ -1280,11 +1278,7 @@ export class AgentRunner implements SessionRuntime {
       }
     }
 
-    // Run idempotency check + log write inside the per-session side-effect
-    // queue so concurrent appends with the same messageId from this process
-    // serialize and the second one observes the first's row before writing.
-    // (Cross-process dedup still relies on caller retry semantics; the index
-    //  in 0023_session_events_message_id_idx keeps the lookup cheap.)
+    // Run idempotency check
     let deduped = false;
     await this.queueSideEffect(session, async () => {
       if (message.messageId) {
@@ -1309,13 +1303,7 @@ export class AgentRunner implements SessionRuntime {
           ...(message.metadata ? { metadata: message.metadata } : {}),
         });
       } else {
-        // Assistant-role backfill: the agent did not generate this turn —
-        // someone (typically the owner of a shared-account session) acted
-        // as the assistant out-of-band. Leave provider/model unset so it's
-        // visibly distinct from model-generated turns; stamp
-        // metadata.synthetic = true (and the originating sender) for
-        // downstream attribution. No user_message / text_final / text_delta
-        // events are emitted; those are reserved for live turns.
+        // Assistant role backfill
         const metadata: Record<string, unknown> = {
           ...(message.metadata ?? {}),
           synthetic: true,
@@ -2984,10 +2972,18 @@ export class AgentRunner implements SessionRuntime {
         const thinkingSignature = extractThinkingSignature(event.message);
         const assistantMessage = event.message;
 
+        // Snapshot the turn's roster + sender names synchronously: cleanGroupText
+        // is also called from a queued side effect on the error path, by which
+        // time a later turn could have overwritten the live session fields.
+        const turnRoster = session.turnGroupParticipants ?? [];
+        const turnSenderNames = new Set(session.groupSenderNames ?? []);
         // Used by both the normal and error paths so stored text matches the stream.
         const cleanGroupText = (text: string): string =>
           session.spec.source.type === 'group'
-            ? stripLeadingSpeakerTag(text, session.groupSenderNames ?? [])
+            ? transcodeGroupMentions(
+                stripLeadingSpeakerTag(text, turnSenderNames),
+                turnRoster,
+              )
             : text;
 
         // Handle error responses from the model provider.
@@ -3049,6 +3045,8 @@ export class AgentRunner implements SessionRuntime {
         const cleanedText = cleanGroupText(effectiveText);
 
         if (isFinalThinkingOnly) {
+          // Mentions are attached only to the authoritative agent_end text_final
+          // (below), so this intermediate emit never double-notifies.
           void this.events.publish({
             type: 'text_final',
             sessionId: session.spec.sessionId,
@@ -3148,6 +3146,10 @@ export class AgentRunner implements SessionRuntime {
       case 'agent_end': {
         const ts = new Date().toISOString();
         let finalText = session.latestAssistantText;
+        // Capture the roster synchronously: the emit below runs in a detached,
+        // un-awaited async IIFE, so the next queued turn could overwrite
+        // session.turnGroupParticipants before extractMentionRefs runs.
+        const turnRoster = session.turnGroupParticipants ?? [];
         const lastUserMessageText = session.lastUserMessageText;
         session.completedTurnCount += 1;
         session.updatedAt = ts;
@@ -3201,10 +3203,15 @@ export class AgentRunner implements SessionRuntime {
           }
 
           if (finalText) {
+            const finalMentions =
+              session.spec.source.type === 'group'
+                ? extractMentionRefs(finalText, turnRoster)
+                : [];
             await this.events.publish({
               type: 'text_final',
               sessionId: session.spec.sessionId,
               text: finalText,
+              ...(finalMentions.length ? { mentions: finalMentions } : {}),
               ...(turnCorrelationId !== undefined ? { correlationId: turnCorrelationId } : {}),
             });
           }
