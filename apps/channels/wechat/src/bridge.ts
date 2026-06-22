@@ -18,10 +18,20 @@ import { stripSilenceTokens } from '@openhermit/shared';
 
 import { sendMessage } from './ilink/api.js';
 import { MessageItemType, MessageType, type WeixinMessage } from './ilink/types.js';
+import { CDN_BASE_URL, downloadAndDecrypt, resolveCdnUrl } from './ilink/media.js';
+
+/** Gateway-enforced attachment cap (25 MiB). Skip oversized media early. */
+const MAX_MEDIA_BYTES = 25 * 1024 * 1024;
 
 interface TurnResult {
   text: string | undefined;
   error: string | undefined;
+}
+
+/** Outcome of resolving an inbound message's media. */
+interface ResolvedInbound {
+  text: string;
+  attachments?: { type: 'file'; id: string }[];
 }
 
 export interface WechatBridgeRuntime {
@@ -44,6 +54,13 @@ export class WechatBridge implements ChannelOutbound {
   private readonly peerSessions = new Map<string, string>();
   /** Per-peer message queue to serialize handling. */
   private readonly peerLocks = new Map<string, Promise<void>>();
+  /**
+   * Latest iLink `context_token` per peer. Issued per-message on inbound and
+   * echoed verbatim on outbound sends so replies stay tied to the upstream
+   * conversation context. In-memory only — after a restart the first
+   * proactive send to a peer goes without a token until they message again.
+   */
+  private readonly peerContextTokens = new Map<string, string>();
 
   constructor(
     private runtime: WechatBridgeRuntime,
@@ -73,10 +90,18 @@ export class WechatBridge implements ChannelOutbound {
     return this.sendText(params.to, params.text);
   }
 
-  private async sendText(toUserId: string, text: string): Promise<ChannelOutboundResult> {
+  private async sendText(
+    toUserId: string,
+    text: string,
+    turnContextToken?: string,
+  ): Promise<ChannelOutboundResult> {
     const trimmed = text.trim();
     if (!trimmed) return { success: true };
 
+    // Replies pass the token snapshotted at their turn's start so a newer
+    // inbound message can't swap it; proactive sends (session_send) fall back
+    // to the latest known token for the peer.
+    const contextToken = turnContextToken ?? this.peerContextTokens.get(toUserId);
     const msg: WeixinMessage = {
       to_user_id: toUserId,
       message_type: MessageType.BOT,
@@ -85,6 +110,7 @@ export class WechatBridge implements ChannelOutbound {
       item_list: [
         { type: MessageItemType.TEXT, text_item: { text: trimmed } },
       ],
+      ...(contextToken ? { context_token: contextToken } : {}),
     };
 
     try {
@@ -111,6 +137,10 @@ export class WechatBridge implements ChannelOutbound {
     const peer = msg.group_id?.trim() || msg.from_user_id?.trim();
     if (!peer) return;
 
+    // Capture the per-message context token so our reply can echo it.
+    const contextToken = msg.context_token?.trim();
+    if (contextToken) this.peerContextTokens.set(peer, contextToken);
+
     const prev = this.peerLocks.get(peer) ?? Promise.resolve();
     const current = prev.then(
       () => this.handleMessageInner(msg, peer),
@@ -130,13 +160,70 @@ export class WechatBridge implements ChannelOutbound {
     return parts.length > 0 ? parts.join('\n') : undefined;
   }
 
+  /**
+   * Resolve inbound media: download + decrypt each image item from the CDN
+   * and upload it as a durable session attachment (images become vision
+   * input). Text/captions are kept. Oversized or failed downloads are skipped.
+   */
+  private async resolveInbound(sessionId: string, msg: WeixinMessage): Promise<ResolvedInbound> {
+    const text = this.extractText(msg) ?? '';
+    const ids: { type: 'file'; id: string }[] = [];
+
+    for (const item of msg.item_list ?? []) {
+      if (item.type !== MessageItemType.IMAGE || !item.image_item) continue;
+      const img = item.image_item;
+      const media = img.media;
+      if (!media || (!media.full_url && !media.encrypt_query_param)) continue;
+
+      // Prefer the hex `aeskey` (raw 16-byte key = 32 hex chars), but only when
+      // it's actually valid hex — otherwise Buffer.from(...,'hex') would
+      // silently truncate to a wrong key. Fall back to the base64 media.aes_key.
+      let aesKeyBase64: string | undefined;
+      const hexKey = img.aeskey?.trim();
+      if (hexKey && /^[0-9a-fA-F]{32}$/.test(hexKey)) {
+        aesKeyBase64 = Buffer.from(hexKey, 'hex').toString('base64');
+      } else {
+        if (hexKey) this.log('image aeskey is not valid 16-byte hex; falling back to media.aes_key');
+        aesKeyBase64 = media.aes_key;
+      }
+      if (!aesKeyBase64) {
+        this.log('image item missing aes key; skipping');
+        continue;
+      }
+
+      try {
+        const url = resolveCdnUrl(media.encrypt_query_param, media.full_url, CDN_BASE_URL);
+        const bytes = await downloadAndDecrypt({ url, aesKeyBase64, maxBytes: MAX_MEDIA_BYTES });
+        const blob = new Blob([bytes as unknown as BlobPart], { type: 'image/jpeg' });
+        const uploaded = await this.client.uploadAttachment(sessionId, blob, 'image.jpg');
+        ids.push({ type: 'file', id: uploaded.id! });
+      } catch (err) {
+        this.log(`image download/decrypt failed: ${err instanceof Error ? err.message : String(err)}`);
+      }
+    }
+
+    return { text, ...(ids.length > 0 ? { attachments: ids } : {}) };
+  }
+
   private async handleMessageInner(msg: WeixinMessage, peer: string): Promise<void> {
-    const text = this.extractText(msg);
-    if (!text) return;
+    const hasImage = (msg.item_list ?? []).some(
+      (item) => item.type === MessageItemType.IMAGE && item.image_item,
+    );
+    if (!this.extractText(msg) && !hasImage) return;
+
+    // Snapshot this turn's context token up front so the reply echoes the
+    // token of the message it's answering, even if a newer message for the
+    // same peer arrives and overwrites the shared map mid-turn.
+    const turnContextToken = msg.context_token?.trim();
 
     const isGroup = Boolean(msg.group_id?.trim());
     const sessionId = await this.getSessionId(peer, isGroup);
     await this.ensureSession(sessionId, msg, isGroup);
+
+    // Download + decrypt inbound images and upload them as session
+    // attachments (images become vision input). Text/captions are kept.
+    const resolved = await this.resolveInbound(sessionId, msg);
+    if (!resolved.text && !resolved.attachments) return;
 
     const senderUserId = msg.from_user_id?.trim();
     const senderPayload = senderUserId
@@ -155,8 +242,9 @@ export class WechatBridge implements ChannelOutbound {
     const postOpts = !isGroup && senderUserId ? { channelUserId: senderUserId } : undefined;
 
     const postResult = await this.client.postMessage(sessionId, {
-      text,
+      text: resolved.text,
       mentioned: !isGroup,
+      ...(resolved.attachments ? { attachments: resolved.attachments } : {}),
       ...senderPayload,
     }, postOpts);
 
@@ -165,13 +253,13 @@ export class WechatBridge implements ChannelOutbound {
     const result = await this.waitForAgentResponse(sessionId);
     const replyText = result.text;
     if (result.error && !replyText) {
-      await this.sendText(peer, `Error: ${result.error}`);
+      await this.sendText(peer, `Error: ${result.error}`, turnContextToken);
       return;
     }
     if (replyText) {
       const stripped = stripSilenceTokens(replyText);
       if (!stripped.isSilent) {
-        await this.sendText(peer, stripped.hadToken ? stripped.text : replyText);
+        await this.sendText(peer, stripped.hadToken ? stripped.text : replyText, turnContextToken);
       }
     }
   }
