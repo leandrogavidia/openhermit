@@ -333,11 +333,20 @@ Phase 1 tools:
 - existing `file_read`, `file_list`, `file_stat`, `exec` — once a file has a
   `sandbox_path`, it is just a file
 
-Dedicated parsing tools (PDF page extraction, spreadsheet preview, archive
-listing, OCR, transcription, media probe, etc.) are out of scope for this
-proposal. They can be considered separately once the availability loop is
-reliable, and only with explicit, auditable invocation — upload itself must
-never silently extract or summarize content.
+Dedicated parsing tools (spreadsheet preview, archive listing, OCR,
+transcription, media probe, etc.) are out of scope for this proposal. They can
+be considered separately once the availability loop is reliable, and only with
+explicit, auditable invocation — upload itself must never silently extract or
+summarize content.
+
+> **Shipped since:** a dedicated `pdf_read` tool now provides explicit,
+> on-demand PDF text extraction. It reads a PDF by `attachment_id` (durable
+> store, with the same visibility rule as `attachment_fetch`) or by
+> `sandbox_path`, extracts text **in-process** via the pure-JS `unpdf` library
+> (no sandbox tooling required, backend-agnostic), supports page selection and
+> encrypted PDFs, and returns the text to the model. It is read-only and does
+> not run at upload time. Scanned/image-only PDFs (no extractable text) and
+> page-image rendering / OCR remain future work — see `docs/tools.md`.
 
 ## Security
 

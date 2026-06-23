@@ -65,6 +65,7 @@ You will see these in the *tool calls* view if you expand a reply:
 - **File write** — create or overwrite a file.
 - **File search / list** — grep, glob, ls equivalents.
 - **Exec** — run a shell command in the sandbox.
+- **PDF read** — extract text from an uploaded or sandbox PDF (so "summarise this PDF" works without any setup). Born-digital PDFs only; scanned/image-only PDFs have no extractable text yet.
 
 Exec is the most powerful and the most policy-sensitive. By default, owners and users have it; guests do not. Sensitive commands can be deny-listed via policy (see [Chapter 15](15-policy-and-approval.md)).
 

@@ -13,6 +13,7 @@ OpenHermit builds toolsets per turn from available runtime capabilities and the 
 | `file_list` | List directory entries (files + subdirectories) |
 | `file_stat` | Stat a path: type, size, mtime (returns null if missing) |
 | `file_delete` | Delete a single file (no recursive) |
+| `pdf_read` | Extract text from a PDF (by `attachment_id` or `sandbox_path`); supports page selection and encrypted PDFs |
 | `web_search` | Search the web through the configured web provider |
 | `web_fetch` | Fetch and extract web page content |
 | `memory_get` | Read one memory by ID |
@@ -60,6 +61,7 @@ mcp__{serverId}__{toolName}
 |-----------|---------------------|
 | exec | `agentId`, workspace, `ExecBackendManager` |
 | file | `agentId`, workspace, `ExecBackendManager` (delegates to `FileBackend` on the exec backend) |
+| pdf | `attachmentStore` + `attachmentStorage`; `sandbox_path` reads also need `ExecBackendManager`. Text extraction runs in-process via `unpdf` (no sandbox tooling required) |
 | web | configured web provider |
 | memory | `memoryProvider` |
 | instruction | `instructionStore` |
