@@ -23,6 +23,7 @@ Not bundled in the CLI. Operators install them with `hermit channel install <pkg
 | Signal | `@openhermit/channel-signal` | signal-cli-rest-api WebSocket (`MODE=json-rpc`); QR-link setup wizard; text + media (files/images, audio transcribed) |
 | WeChat (personal) | `@openhermit/channel-wechat` | iLink long-poll (`getUpdates`) — text + inbound images + voice notes (SILK↔STT/TTS) |
 | WhatsApp | `@openhermit/channel-whatsapp` | WhatsApp Web via Baileys; QR setup wizard — text + media (image/video/document/voice) |
+| Vexa (meetings) | `@openhermit/channel-vexa` | Webhook-only meeting-transcription capture (Google Meet / Zoom / Teams via [Vexa](https://github.com/Vexa-ai/vexa)). No outbound, no loop: a `meeting.completed` webhook triggers an owner-scoped agent turn that stores the transcript in memory. See [`vexa-meetings.md`](vexa-meetings.md) |
 
 External plugins follow the same manifest contract as bundled ones — there is no special-case loading path. Adding a new external plugin requires no gateway code change, only a config edit and a restart.
 

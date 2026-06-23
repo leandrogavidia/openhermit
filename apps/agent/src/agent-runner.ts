@@ -1661,6 +1661,26 @@ export class AgentRunner implements SessionRuntime {
       }
     }
 
+    // System-actor sessions (e.g. the Vexa meeting-capture channel) carry an
+    // `act_as_owner` flag instead of a human channel identity: an external
+    // event (a meeting ending) triggered the turn, with no human sender to
+    // attribute it to. Resolve to the agent's owner so memory writes and tool
+    // access are owner-scoped. Honoured only on NON-interactive sessions, so a
+    // human-facing channel can never escalate to owner by forging the flag —
+    // the bridge that sets it never opens interactive sessions.
+    const actAsOwner = spec.metadata?.act_as_owner;
+    if (!spec.source.interactive && (actAsOwner === true || actAsOwner === 'true')) {
+      const members = await this.store.users.listByAgent(this.scope);
+      const owner = members
+        .filter((m) => m.role === 'owner')
+        .sort((a, b) => a.userId.localeCompare(b.userId))[0];
+      if (owner) {
+        const user = await this.store.users.get(owner.userId);
+        return { userId: owner.userId, role: 'owner', ...(user?.name ? { userName: user.name } : {}) };
+      }
+      this.logRuntime(`act_as_owner requested on ${this.scope.agentId} but no owner member found`);
+    }
+
     // Caller (auth context) takes priority over session metadata. This is
     // the request initiator's identity, regardless of what channel the
     // session itself was originally created from.

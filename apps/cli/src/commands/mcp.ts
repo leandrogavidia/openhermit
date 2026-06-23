@@ -2,6 +2,20 @@ import type { Command } from 'commander';
 
 import { createGateway, handleError, printTable } from './shared.js';
 
+/** Collect repeatable `--header KEY:VALUE` flags into a record. */
+const collectHeader = (
+  val: string,
+  acc: Record<string, string>,
+): Record<string, string> => {
+  const idx = val.indexOf(':');
+  if (idx === -1) {
+    console.error(`Invalid --header "${val}". Use KEY:VALUE (e.g. X-API-Key:\${{VEXA_API_KEY}}).`);
+    process.exit(1);
+  }
+  acc[val.slice(0, idx).trim()] = val.slice(idx + 1).trim();
+  return acc;
+};
+
 export const registerMcpCommand = (program: Command): void => {
   const mcp = program
     .command('mcp')
@@ -113,4 +127,42 @@ export const registerMcpCommand = (program: Command): void => {
         handleError(error);
       }
     });
+
+  mcp
+    .command('register')
+    .description('Register (upsert) an MCP server in the registry. Then enable it with `mcp enable`.')
+    .argument('<id>', 'Stable MCP server ID (e.g. "vexa")')
+    .requiredOption('--url <url>', 'MCP server URL (Streamable HTTP endpoint)')
+    .option('--name <name>', 'Display name (defaults to the id)')
+    .option('--description <text>', 'Description')
+    .option(
+      '--header <KEY:VALUE>',
+      'Request header; repeatable. Reference agent secrets via ${{NAME}}.',
+      collectHeader,
+      {} as Record<string, string>,
+    )
+    .action(
+      async (
+        id: string,
+        opts: { url: string; name?: string; description?: string; header: Record<string, string> },
+      ) => {
+        try {
+          const gateway = createGateway();
+          const description =
+            opts.description && opts.description.trim() ? opts.description.trim() : `MCP server ${id}`;
+          await gateway.registerMcpServer({
+            id,
+            name: opts.name ?? id,
+            description,
+            url: opts.url,
+            ...(Object.keys(opts.header).length > 0 ? { headers: opts.header } : {}),
+          });
+          console.log(
+            `Registered MCP server ${id} (${opts.url}). Enable it with: hermit mcp enable ${id} --all`,
+          );
+        } catch (error) {
+          handleError(error);
+        }
+      },
+    );
 };
