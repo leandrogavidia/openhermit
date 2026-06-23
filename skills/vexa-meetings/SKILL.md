@@ -54,9 +54,11 @@ differ, list your `mcp__vexa__*` tools and map by purpose.
    supports — never invent decisions, owners, or dates. If the transcript is
    empty, record that the meeting had no captured transcript and stop.
 6. **Write to memory** using the keys + metadata below.
-7. **Sensitive meetings.** If private/confidential, set
-   `grants: [{ "type": "role", "value": "owner" }]` on every entry. Otherwise
-   omit `grants` (open, like other project knowledge).
+7. **Sensitive meetings.** If private/confidential, pass
+   `grants: [{ "type": "role", "value": "owner" }]` to `memory_add` on every
+   entry. Otherwise omit `grants` (open, like other project knowledge). Note:
+   `memory_update` does **not** change grants — to restrict an entry that was
+   already written open, call `memory_set_grants` with the same key.
 
 ## Memory layout
 

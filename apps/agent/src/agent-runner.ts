@@ -1665,11 +1665,18 @@ export class AgentRunner implements SessionRuntime {
     // `act_as_owner` flag instead of a human channel identity: an external
     // event (a meeting ending) triggered the turn, with no human sender to
     // attribute it to. Resolve to the agent's owner so memory writes and tool
-    // access are owner-scoped. Honoured only on NON-interactive sessions, so a
-    // human-facing channel can never escalate to owner by forging the flag —
-    // the bridge that sets it never opens interactive sessions.
+    // access are owner-scoped.
+    //
+    // Honoured ONLY when (a) the session is non-interactive AND (b) there is no
+    // human `caller`. `caller` is set by the gateway from the auth context: a
+    // user JWT always carries a channelUserId (caller present), while a system
+    // / channel service token with no `x-channel-user-id` header resolves to no
+    // caller. Without the `!caller` guard a user-mode caller could forge
+    // `source.interactive=false` + `act_as_owner` to bypass the membership /
+    // access-level gating below and escalate to owner. The Vexa bridge calls in
+    // with the channel service token and no channelUserId, so it passes.
     const actAsOwner = spec.metadata?.act_as_owner;
-    if (!spec.source.interactive && (actAsOwner === true || actAsOwner === 'true')) {
+    if (!caller && !spec.source.interactive && (actAsOwner === true || actAsOwner === 'true')) {
       const members = await this.store.users.listByAgent(this.scope);
       const owner = members
         .filter((m) => m.role === 'owner')
