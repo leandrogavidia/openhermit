@@ -175,12 +175,18 @@ export const createPdfReadTool = (
     } else {
       const backend = resolveBackend(context, args.sandbox);
       const path = args.sandbox_path!.trim();
-      const { data } = await backend.files.read(path);
-      if (data.byteLength > cap) {
+      // Check size via stat before reading so an oversized file is rejected
+      // without being materialized into memory (the read has no byte cap).
+      const stat = await backend.files.stat(path);
+      if (!stat || stat.type !== 'file') {
+        throw new ValidationError(`pdf_read: no such file in sandbox: ${path}.`);
+      }
+      if (stat.size > cap) {
         throw new ValidationError(
-          `pdf_read: ${path} is ${data.byteLength} bytes which exceeds max_bytes=${cap}.`,
+          `pdf_read: ${path} is ${stat.size} bytes which exceeds max_bytes=${cap}.`,
         );
       }
+      const { data } = await backend.files.read(path);
       buf = data;
       source = { path, sandbox: backend.id };
     }
@@ -230,6 +236,13 @@ export const createPdfReadTool = (
       /* metadata is optional */
     }
 
+    // Actual encryption status from pdf.js: `EncryptFilterName` is the
+    // encryption filter name when the PDF is encrypted (truthy), null when it
+    // is not. Fall back to "was a password supplied" only if metadata is
+    // unavailable.
+    const encrypted =
+      'EncryptFilterName' in info ? Boolean(info.EncryptFilterName) : !!args.password;
+
     const note = hadText
       ? undefined
       : 'No extractable text — this PDF is likely scanned/image-only. Page-image rendering (OCR/vision) is not yet supported by pdf_read.';
@@ -246,7 +259,7 @@ export const createPdfReadTool = (
         pagesExtracted: selected,
         extractedChars,
         hadText,
-        encrypted: !!args.password,
+        encrypted,
         extraction: 'unpdf',
         ...(typeof info.Title === 'string' && info.Title ? { title: info.Title } : {}),
         ...(typeof info.Producer === 'string' && info.Producer ? { producer: info.Producer } : {}),

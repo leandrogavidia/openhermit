@@ -106,7 +106,11 @@ const makeReadOnlyBackend = (agentHome: string, files: Map<string, Buffer>): Exe
     },
     write: async () => { throw new Error('not used'); },
     list: async () => [],
-    stat: async () => null,
+    stat: async (filePath: string) => {
+      const data = files.get(filePath);
+      if (!data) return null;
+      return { type: 'file' as const, size: data.byteLength, mtime: '1970-01-01T00:00:00.000Z' };
+    },
     delete: async () => { throw new Error('not used'); },
   },
 });
@@ -147,6 +151,7 @@ test('pdf_read extracts text from an uploaded PDF by attachment_id', async (t) =
   assert.deepEqual(details.pagesExtracted, [1, 2]);
   assert.equal(details.hadText, true);
   assert.equal(details.extraction, 'unpdf');
+  assert.equal(details.encrypted, false, 'an unencrypted PDF reports encrypted=false');
 });
 
 test('pdf_read pages="1" returns only the first page', async (t) => {
@@ -217,6 +222,31 @@ test('pdf_read enforces attachment visibility (cross-session, non-owner, non-upl
   await assert.rejects(
     () => tool.execute('tc-6', { attachment_id: id }),
     (err: unknown) => err instanceof ValidationError && /not visible/.test(err.message),
+  );
+});
+
+test('pdf_read rejects an oversized sandbox file via stat, without reading it', async (t) => {
+  const { baseCtx } = await setup(t);
+  const agentHome = '/root';
+  const backend: ExecBackend = {
+    ...makeReadOnlyBackend(agentHome, new Map()),
+    files: {
+      read: async () => {
+        throw new Error('read must not be called for an oversized file');
+      },
+      write: async () => { throw new Error('not used'); },
+      list: async () => [],
+      stat: async () => ({ type: 'file' as const, size: 10_000_000, mtime: '1970-01-01T00:00:00.000Z' }),
+      delete: async () => { throw new Error('not used'); },
+    },
+  };
+  const ctx: ToolContext = { ...baseCtx, execBackendManager: new ExecBackendManager([backend]) };
+  const tool = createPdfReadTool(ctx);
+  // The rejection must be the max_bytes ValidationError (from the stat check),
+  // not the read() guard — proving the cap is enforced before materialization.
+  await assert.rejects(
+    () => tool.execute('tc-9', { sandbox_path: `${agentHome}/big.pdf`, max_bytes: 1000 }),
+    (err: unknown) => err instanceof ValidationError && /max_bytes/.test(err.message),
   );
 });
 
